@@ -1,0 +1,68 @@
+[
+  {
+    "id": 1758440956828,
+    "operator": "ASHIQ MUHAMMAD",
+    "macchina": "1",
+    "linea": "1",
+    "ore": 12,
+    "data": "21/09/2025",
+    "descrizione": "sas",
+    "createdAt": "2025-09-21T09:07:21.365Z"
+  },
+  {
+    "id": 1758440956829,
+    "operator": "BRAMBILLA ALBERTO",
+    "macchina": "2",
+    "linea": "2",
+    "ore": 2,
+    "data": "14/09/2025",
+    "descrizione": "wqww",
+    "createdAt": "2025-09-21T09:09:45.367Z"
+  },
+  {
+    "id": 1758440956830,
+    "operator": "CAMURRI EMANUELE",
+    "macchina": "3",
+    "linea": "3",
+    "ore": 12,
+    "data": "06/09/2025",
+    "descrizione": "we",
+    "createdAt": "2025-09-21T09:10:22.207Z"
+  },
+  {
+    "id": 1758440956831,
+    "operator": "MANARA FRANCESCO",
+    "macchina": "4",
+    "linea": "4",
+    "ore": 20,
+    "data": "05/09/2025",
+    "descrizione": ""
+  },
+  {
+    "id": 1758440956832,
+    "operator": "PISANIELLO ANDREA",
+    "macchina": "5",
+    "linea": "5",
+    "ore": 12,
+    "data": "11/09/2025",
+    "descrizione": ""
+  },
+  {
+    "id": 1758440956833,
+    "operator": "BRAMBILLA ALBERTO",
+    "macchina": "6",
+    "linea": "6",
+    "ore": 2,
+    "data": "04/09/2025",
+    "descrizione": ""
+  },
+  {
+    "id": 1758440956834,
+    "operator": "BIRAME NGOM",
+    "macchina": "9",
+    "linea": "9",
+    "ore": 2,
+    "data": "01/09/2025",
+    "descrizione": "saldatura"
+  }
+]
