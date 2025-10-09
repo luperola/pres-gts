@@ -1,76 +1,32 @@
 [
   {
-    "id": 1758440956829,
-    "operator": "BRAMBILLA ALBERTO",
-    "macchina": "2",
-    "linea": "2",
-    "ore": 2,
-    "data": "14/09/2025",
-    "descrizione": "wqww",
-    "createdAt": "2025-09-21T09:09:45.367Z"
-  },
-  {
-    "id": 1758440956830,
-    "operator": "CAMURRI EMANUELE",
-    "macchina": "3",
-    "linea": "3",
+    "id": 1758440956837,
+    "operator": "ASHIQ MUHAMMAD",
+    "cantiere": "Catania",
+    "macchina": "wet",
+    "linea": "asa",
     "ore": 12,
-    "data": "06/09/2025",
-    "descrizione": "we",
-    "createdAt": "2025-09-21T09:10:22.207Z"
-  },
-  {
-    "id": 1758440956831,
-    "operator": "MANARA FRANCESCO",
-    "macchina": "4",
-    "linea": "4",
-    "ore": 20,
-    "data": "05/09/2025",
+    "data": "08/10/2025",
     "descrizione": ""
   },
   {
-    "id": 1758440956832,
-    "operator": "PISANIELLO ANDREA",
-    "macchina": "5",
-    "linea": "5",
-    "ore": 12,
-    "data": "11/09/2025",
-    "descrizione": ""
-  },
-  {
-    "id": 1758440956833,
-    "operator": "BRAMBILLA ALBERTO",
-    "macchina": "6",
-    "linea": "6",
-    "ore": 2,
-    "data": "04/09/2025",
-    "descrizione": ""
-  },
-  {
-    "id": 1758440956834,
+    "id": 1758440956838,
     "operator": "BIRAME NGOM",
-    "macchina": "9",
-    "linea": "9",
-    "ore": 2,
-    "data": "01/09/2025",
-    "descrizione": "saldatura"
+    "cantiere": "Agrate",
+    "macchina": "tindy",
+    "linea": "N2",
+    "ore": 4,
+    "data": "07/10/2025",
+    "descrizione": "test"
   },
   {
-    "id": 1758440956835,
-    "operator": "AMATA GIORGIO",
-    "macchina": "asa",
-    "linea": "ss",
-    "ore": 8,
-    "data": "17/09/2025",
-    "descrizione": ""
-  },
-  {
-    "id": 1758440956836,
-    "operator": "AMATA GIORGIO",
-    "macchina": "asc",
-    "linea": "wsw",
+    "id": 1758440956839,
+    "operator": "BRAMBILLA ALBERTO",
+    "cantiere": "Novara",
+    "macchina": "memc",
+    "linea": "O2",
     "ore": 12,
-    "data": "09/10/2025",
-    "descrizione": ""
+    "data": "07/10/2025",
+    "descrizione": "Saldatura"
   }
 ]

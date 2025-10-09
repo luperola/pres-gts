@@ -117,10 +117,17 @@ app.get("/api/operators", (req, res) => {
 // --- CREA VOCE (chiamato da index.html) ---
 app.post("/api/entry", async (req, res) => {
   try {
-    const { operator, macchina, linea, ore, data, descrizione } =
+    const { operator, cantiere, macchina, linea, ore, data, descrizione } =
       req.body || {};
     // campi obbligatori (descrizione diventa facoltativa)
-    if (!operator || !macchina || !linea || ore === undefined || !data) {
+    if (
+      !operator ||
+      !cantiere ||
+      !macchina ||
+      !linea ||
+      ore === undefined ||
+      !data
+    ) {
       return res.status(400).json({
         error: "Tutti i campi sono obbligatori (tranne descrizione).",
       });
@@ -144,9 +151,10 @@ app.post("/api/entry", async (req, res) => {
 
     const entry = {
       id: nextId,
-      operator,
-      macchina,
-      linea,
+      operator: typeof operator === "string" ? operator.trim() : operator,
+      cantiere: typeof cantiere === "string" ? cantiere.trim() : cantiere,
+      macchina: typeof macchina === "string" ? macchina.trim() : macchina,
+      linea: typeof linea === "string" ? linea.trim() : linea,
       ore: numOre,
       data, // DD/MM/YYYY
       descrizione: typeof descrizione === "string" ? descrizione.trim() : "", // <-- facoltativa
@@ -163,6 +171,7 @@ app.post("/api/entry", async (req, res) => {
 // --- SEARCH (filtri) ---
 app.post("/api/entries/search", authMiddleware, async (req, res) => {
   const {
+    cantiere = null,
     macchina = null,
     linea = null,
     operator = null,
@@ -176,6 +185,17 @@ app.post("/api/entries/search", authMiddleware, async (req, res) => {
 
   const entries = await loadEntries();
   const out = entries.filter((e) => {
+    if (cantiere) {
+      const hay = String(e.cantiere || "").toLowerCase();
+      const tokens = String(cantiere)
+        .toLowerCase()
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      for (const t of tokens) {
+        if (!hay.includes(t)) return false;
+      }
+    }
     if (
       macchina &&
       String(e.macchina || "").toLowerCase() !== String(macchina).toLowerCase()
@@ -247,6 +267,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
   const rows = Array.isArray(req.body?.entries) ? req.body.entries : [];
   const headers = [
     "Operatore",
+    "Cantiere",
     "Macchina",
     "Linea",
     "Ore",
@@ -260,6 +281,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
   for (const e of rows) {
     const line = [
       e.operator ?? "",
+      e.cantiere ?? "",
       e.macchina ?? "",
       e.linea ?? "",
       (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
@@ -287,6 +309,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 
   ws.columns = [
     { header: "Operatore", key: "operator", width: 24 },
+    { header: "Cantiere", key: "cantiere", width: 24 },
     { header: "Macchina", key: "macchina", width: 18 },
     { header: "Linea", key: "linea", width: 14 },
     { header: "Ore", key: "ore", width: 10 },
@@ -298,6 +321,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   for (const e of rows) {
     ws.addRow({
       operator: e.operator ?? "",
+      cantiere: e.cantiere ?? "",
       macchina: e.macchina ?? "",
       linea: e.linea ?? "",
       ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",

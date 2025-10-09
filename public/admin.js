@@ -35,6 +35,7 @@ function downloadBlob(blob, filename) {
 // Pulisce i filtri ai valori vuoti
 function clearFilters() {
   const ids = [
+    "f-cantiere",
     "f-macchina",
     "f-linea",
     "f-operator",
@@ -60,6 +61,7 @@ function renderTable(entries) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${e.operator ?? ""}</td>
+      <td>${e.cantiere ?? ""}</td>
       <td>${e.macchina ?? ""}</td>
       <td>${e.linea ?? ""}</td>
       <td>${Number(e.ore ?? 0).toFixed(2)}</td>
@@ -84,11 +86,13 @@ async function search(ev) {
   const macchina = $("f-macchina")?.value || "";
   const linea = $("f-linea")?.value || "";
   const operator = $("f-operator")?.value || "";
+  const cantiere = $("f-cantiere")?.value || "";
   const descrContains = $("f-descr")?.value || "";
   const dataFrom = $("f-from")?.value ? ymdToDmy($("f-from").value) : "";
   const dataTo = $("f-to")?.value ? ymdToDmy($("f-to").value) : "";
 
   const body = {
+    cantiere: cantiere || null,
     macchina: macchina || null,
     linea: linea || null,
     operator: operator || null,
