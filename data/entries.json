@@ -63,5 +63,14 @@
     "ore": 8,
     "data": "17/09/2025",
     "descrizione": ""
+  },
+  {
+    "id": 1758440956836,
+    "operator": "AMATA GIORGIO",
+    "macchina": "asc",
+    "linea": "wsw",
+    "ore": 12,
+    "data": "09/10/2025",
+    "descrizione": ""
   }
 ]
