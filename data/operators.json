@@ -1,18 +1,32 @@
 {
   "operators": [
-    "Luigi Perolari",
-    "Michelangelo Riva"
+    "AMATA GIORGIO",
+    "ASHIQ MUHAMMAD",
+    "BIRAME NGOM",
+    "BONOMETTI DANIELE",
+    "BRAMBILLA ALBERTO",
+    "CAMURRI EMANUELE",
+    "EL OUAER SLHAEDDINE",
+    "FERLA LUCA",
+    "IMPROTA GENNARO",
+    "LA CAUSA CORRADO",
+    "LA CAUSA SALVATORE",
+    "LAMESTA DAVIDE",
+    "MANARA FRANCESCO",
+    "PETTE ELVIS",
+    "PETTE VINCENZO",
+    "PISANIELLO ANDREA",
+    "POLLARA GIUSEPPE",
+    "PRIVITERA GIOVANNI",
+    "ROMITO ROSARIO",
+    "RUSSO DAVIDE",
+    "SCHILLACI VALERIO",
+    "SEVERINO FRANCESCO",
+    "SIRIGU ALBERTO",
+    "VIANGAITI GIANFRANCO",
+    "ZAPPOLI ANDREA"
   ],
-  "cantieri": [
-    "AgrateR3",
-    "Catania"
-  ],
-  "macchine": [
-    "TindY",
-    "Wet2342"
-  ],
-  "linee": [
-    "DIW",
-    "N2"
-  ]
+  "cantieri": ["AgrateR3", "Catania"],
+  "macchine": ["TindY", "Wet2342"],
+  "linee": ["DIW", "N2"]
 }
