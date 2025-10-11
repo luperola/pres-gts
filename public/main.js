@@ -3,7 +3,9 @@ function populateSelect(select, values) {
   select.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Seleziona...";
+  placeholder.textContent = "Seleziona";
+  placeholder.disabled = true;
+  placeholder.selected = true;
   select.appendChild(placeholder);
   for (const v of values) {
     const opt = document.createElement("option");
@@ -12,32 +14,23 @@ function populateSelect(select, values) {
     select.appendChild(opt);
   }
 }
-
-function populateDatalist(list, values) {
-  if (!list) return;
-  list.innerHTML = "";
-  for (const v of values) {
-    const opt = document.createElement("option");
-    opt.value = v;
-    list.appendChild(opt);
-  }
-}
-
 async function loadOptions() {
   try {
     const res = await fetch("/api/options");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     populateSelect(document.getElementById("operator"), data.operators || []);
-    populateDatalist(
-      document.getElementById("cantiereList"),
-      data.cantieri || []
-    );
+    populateSelect(document.getElementById("cantiere"), data.cantieri || []);
+    populateSelect(document.getElementById("macchina"), data.macchine || []);
+    populateSelect(document.getElementById("linea"), data.linee || []);
     populateDatalist(
       document.getElementById("macchinaList"),
       data.macchine || []
     );
     populateDatalist(document.getElementById("lineaList"), data.linee || []);
+    populateSelect(document.getElementById("cantiere"), []);
+    populateSelect(document.getElementById("macchina"), []);
+    populateSelect(document.getElementById("linea"), []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
     populateSelect(document.getElementById("operator"), []);
