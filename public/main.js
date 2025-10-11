@@ -23,17 +23,12 @@ async function loadOptions() {
     populateSelect(document.getElementById("cantiere"), data.cantieri || []);
     populateSelect(document.getElementById("macchina"), data.macchine || []);
     populateSelect(document.getElementById("linea"), data.linee || []);
-    populateDatalist(
-      document.getElementById("macchinaList"),
-      data.macchine || []
-    );
-    populateDatalist(document.getElementById("lineaList"), data.linee || []);
-    populateSelect(document.getElementById("cantiere"), []);
-    populateSelect(document.getElementById("macchina"), []);
-    populateSelect(document.getElementById("linea"), []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
     populateSelect(document.getElementById("operator"), []);
+    populateSelect(document.getElementById("cantiere"), []);
+    populateSelect(document.getElementById("macchina"), []);
+    populateSelect(document.getElementById("linea"), []);
   }
 }
 

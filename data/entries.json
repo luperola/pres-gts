@@ -38,5 +38,15 @@
     "ore": 14,
     "data": "11/10/2025",
     "descrizione": "saldatura"
+  },
+  {
+    "id": 1758440956842,
+    "operator": "BIRAME NGOM",
+    "cantiere": "AgrateR3",
+    "macchina": "Wet2342",
+    "linea": "DIW",
+    "ore": 12,
+    "data": "10/10/2025",
+    "descrizione": ""
   }
 ]
