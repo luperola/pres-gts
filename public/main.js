@@ -1,10 +1,47 @@
-async function loadOperators() {
-  const res = await fetch("/api/operators");
-  const data = await res.json();
-  const sel = document.getElementById("operator");
-  sel.innerHTML =
-    '<option value="">Seleziona...</option>' +
-    data.operators.map((o) => `<option>${o}</option>`).join("");
+function populateSelect(select, values) {
+  if (!select) return;
+  select.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Seleziona...";
+  select.appendChild(placeholder);
+  for (const v of values) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    select.appendChild(opt);
+  }
+}
+
+function populateDatalist(list, values) {
+  if (!list) return;
+  list.innerHTML = "";
+  for (const v of values) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    list.appendChild(opt);
+  }
+}
+
+async function loadOptions() {
+  try {
+    const res = await fetch("/api/options");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    populateSelect(document.getElementById("operator"), data.operators || []);
+    populateDatalist(
+      document.getElementById("cantiereList"),
+      data.cantieri || []
+    );
+    populateDatalist(
+      document.getElementById("macchinaList"),
+      data.macchine || []
+    );
+    populateDatalist(document.getElementById("lineaList"), data.linee || []);
+  } catch (err) {
+    console.error("Impossibile caricare le opzioni", err);
+    populateSelect(document.getElementById("operator"), []);
+  }
 }
 
 function ymdToDmy(ymd) {
@@ -23,7 +60,7 @@ function setTodayMaxDate(inputId) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  loadOperators();
+  loadOptions();
   setTodayMaxDate("data");
 
   const form = document.getElementById("entryForm");

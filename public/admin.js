@@ -219,6 +219,13 @@ async function safeJson(res) {
   }
 }
 
+function showAdminArea() {
+  const panel = $("panel");
+  if (panel) panel.classList.remove("d-none");
+  const adminLinks = $("adminLinks");
+  if (adminLinks) adminLinks.classList.remove("d-none");
+}
+
 // Login admin -> salva token e mostra pannello
 async function doLogin(ev) {
   ev.preventDefault();
@@ -243,8 +250,7 @@ async function doLogin(ev) {
   sessionStorage.setItem("token", TOKEN);
 
   // mostra pannello e carica dati
-  const panel = $("panel");
-  if (panel) panel.classList.remove("d-none");
+  showAdminArea();
   $("loginMsg").textContent = "Login ok";
   await search();
 }
@@ -257,8 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Prova a riprendere token dalla sessione (se già loggato)
   TOKEN = sessionStorage.getItem("token") || null;
   if (TOKEN) {
-    const panel = $("panel");
-    if (panel) panel.classList.remove("d-none");
+    showAdminArea();
     search().catch(console.error);
   }
 

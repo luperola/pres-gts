@@ -37,6 +37,9 @@ app.get("/", (req, res) => {
 
 // --- Storage helpers (entries.json) ---
 const ENTRIES_PATH = path.join(__dirname, "data", "entries.json");
+const OPTIONS_PATH = path.join(__dirname, "data", "operators.json");
+
+const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 
 async function ensureDataFile() {
   const dir = path.dirname(ENTRIES_PATH);
@@ -62,6 +65,87 @@ async function loadEntries() {
 async function saveEntries(arr) {
   await ensureDataFile();
   await fs.writeFile(ENTRIES_PATH, JSON.stringify(arr, null, 2), "utf8");
+}
+
+async function ensureOptionsFile() {
+  const dir = path.dirname(OPTIONS_PATH);
+  await fs.mkdir(dir, { recursive: true });
+  try {
+    await fs.access(OPTIONS_PATH);
+  } catch {
+    const initial = {
+      operators: [],
+      cantieri: [],
+      macchine: [],
+      linee: [],
+    };
+    try {
+      const seededOperators = readOperatorsFromXlsx();
+      if (seededOperators.length) {
+        initial.operators = seededOperators;
+      }
+    } catch {
+      // ignore se il file xlsx non è disponibile
+    }
+    await fs.writeFile(OPTIONS_PATH, JSON.stringify(initial, null, 2), "utf8");
+  }
+}
+
+function normalizeOptions(obj) {
+  const norm = {
+    operators: [],
+    cantieri: [],
+    macchine: [],
+    linee: [],
+  };
+  for (const key of OPTION_CATEGORIES) {
+    const arr = Array.isArray(obj?.[key]) ? obj[key] : [];
+    norm[key] = arr
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter(Boolean)
+      .filter((v, idx, self) => {
+        return (
+          self.findIndex((x) => x.toLowerCase() === String(v).toLowerCase()) ===
+          idx
+        );
+      })
+      .sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+  }
+  return norm;
+}
+
+async function loadOptions() {
+  await ensureOptionsFile();
+  const raw = await fs.readFile(OPTIONS_PATH, "utf8").catch(() => "{}");
+  try {
+    const parsed = JSON.parse(raw);
+    return normalizeOptions(parsed);
+  } catch {
+    return normalizeOptions({});
+  }
+}
+
+async function saveOptions(data) {
+  await ensureOptionsFile();
+  const normalized = normalizeOptions(data);
+  await fs.writeFile(OPTIONS_PATH, JSON.stringify(normalized, null, 2), "utf8");
+  return normalized;
+}
+
+function readOperatorsFromXlsx() {
+  const wb = xlsx.readFile(OPERATORS_XLSX);
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
+  return rows
+    .map((r) => String(r.OPERATORI || "").trim())
+    .filter(Boolean)
+    .filter((v, idx, arr) => {
+      return (
+        arr.findIndex((x) => x.toLowerCase() === String(v).toLowerCase()) ===
+        idx
+      );
+    })
+    .sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
 }
 
 // --- Utility date DD/MM/YYYY ---
@@ -99,17 +183,130 @@ app.post("/api/login", async (req, res) => {
 // Legge data/operators.xlsx (colonna OPERATORI) e restituisce la lista
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 
-app.get("/api/operators", (req, res) => {
+app.get("/api/options", async (req, res) => {
   try {
-    const wb = xlsx.readFile(OPERATORS_XLSX);
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
-    const operators = rows
-      .map((r) => String(r.OPERATORI || "").trim())
-      .filter(Boolean);
-    res.json({ operators });
+    const options = await loadOptions();
+    res.json(options);
   } catch (err) {
-    res.json({ operators: [] });
+    res.status(500).json({ error: "Impossibile leggere le opzioni" });
+  }
+});
+
+app.post("/api/options", authMiddleware, async (req, res) => {
+  const category = String(req.body?.category || "").toLowerCase();
+  const value =
+    typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  if (!OPTION_CATEGORIES.includes(category) || !value) {
+    return res.status(400).json({ error: "Categoria o valore non valido" });
+  }
+  try {
+    const options = await loadOptions();
+    const arr = options[category];
+    const exists = arr.some((v) => v.toLowerCase() === value.toLowerCase());
+    if (!exists) {
+      arr.push(value);
+    }
+    const saved = await saveOptions(options);
+    res.json({ ok: true, options: saved, created: !exists });
+  } catch (err) {
+    res.status(500).json({ error: "Impossibile salvare" });
+  }
+});
+
+app.delete("/api/options", authMiddleware, async (req, res) => {
+  const category = String(req.body?.category || "").toLowerCase();
+  const value =
+    typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  if (!OPTION_CATEGORIES.includes(category) || !value) {
+    return res.status(400).json({ error: "Categoria o valore non valido" });
+  }
+  try {
+    const options = await loadOptions();
+    const arr = options[category];
+    const filtered = arr.filter((v) => v.toLowerCase() !== value.toLowerCase());
+    if (filtered.length === arr.length) {
+      return res
+        .status(404)
+        .json({ error: "Voce non trovata", options: options });
+    }
+    options[category] = filtered;
+    const saved = await saveOptions(options);
+    res.json({ ok: true, options: saved });
+  } catch (err) {
+    res.status(500).json({ error: "Impossibile salvare" });
+  }
+});
+
+app.get("/api/operators", async (req, res) => {
+  try {
+    const options = await loadOptions();
+    res.json({ operators: options.operators });
+  } catch (err) {
+    try {
+      const fallback = readOperatorsFromXlsx();
+      res.json({ operators: fallback });
+    } catch {
+      res.json({ operators: [] });
+    }
+  }
+});
+
+app.post("/api/options", authMiddleware, async (req, res) => {
+  const category = String(req.body?.category || "").toLowerCase();
+  const value =
+    typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  if (!OPTION_CATEGORIES.includes(category) || !value) {
+    return res.status(400).json({ error: "Categoria o valore non valido" });
+  }
+  try {
+    const options = await loadOptions();
+    const arr = options[category];
+    const exists = arr.some((v) => v.toLowerCase() === value.toLowerCase());
+    if (!exists) {
+      arr.push(value);
+    }
+    const saved = await saveOptions(options);
+    res.json({ ok: true, options: saved, created: !exists });
+  } catch (err) {
+    res.status(500).json({ error: "Impossibile salvare" });
+  }
+});
+
+app.delete("/api/options", authMiddleware, async (req, res) => {
+  const category = String(req.body?.category || "").toLowerCase();
+  const value =
+    typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  if (!OPTION_CATEGORIES.includes(category) || !value) {
+    return res.status(400).json({ error: "Categoria o valore non valido" });
+  }
+  try {
+    const options = await loadOptions();
+    const arr = options[category];
+    const filtered = arr.filter((v) => v.toLowerCase() !== value.toLowerCase());
+    if (filtered.length === arr.length) {
+      return res
+        .status(404)
+        .json({ error: "Voce non trovata", options: options });
+    }
+    options[category] = filtered;
+    const saved = await saveOptions(options);
+    res.json({ ok: true, options: saved });
+  } catch (err) {
+    res.status(500).json({ error: "Impossibile salvare" });
+  }
+});
+
+app.get("/api/operators", async (req, res) => {
+  try {
+    const options = await loadOptions();
+    res.json({ operators: options.operators });
+  } catch (err) {
+    try {
+      const fallback = readOperatorsFromXlsx();
+      res.json({ operators: fallback });
+    } catch {
+      res.json({ operators: [] });
+    }
   }
 });
 
