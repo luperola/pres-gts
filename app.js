@@ -28,16 +28,11 @@ const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
 
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
-app.use(express.static(PUBLIC_DIR));
-
-// Rotta esplicita per la home: serve public/index.html
-app.get("/", (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
-});
 
 // --- Storage helpers (entries.json) ---
 const ENTRIES_PATH = path.join(__dirname, "data", "entries.json");
 const OPTIONS_PATH = path.join(__dirname, "data", "operators.json");
+const USERS_PATH = path.join(__dirname, "data", "users.json");
 
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 
@@ -132,6 +127,32 @@ async function saveOptions(data) {
   return normalized;
 }
 
+async function ensureUsersFile() {
+  const dir = path.dirname(USERS_PATH);
+  await fs.mkdir(dir, { recursive: true });
+  try {
+    await fs.access(USERS_PATH);
+  } catch {
+    await fs.writeFile(USERS_PATH, "[]", "utf8");
+  }
+}
+
+async function loadUsers() {
+  await ensureUsersFile();
+  const raw = await fs.readFile(USERS_PATH, "utf8").catch(() => "[]");
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveUsers(users) {
+  await ensureUsersFile();
+  await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), "utf8");
+}
+
 function readOperatorsFromXlsx() {
   const wb = xlsx.readFile(OPERATORS_XLSX);
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -159,6 +180,57 @@ function dmyToKey(dmy) {
 
 // --- Auth semplice a token ---
 const validTokens = new Set();
+const userTokens = new Map();
+
+function parseCookies(header = "") {
+  return header.split(";").reduce((acc, part) => {
+    const [key, ...rest] = part.trim().split("=");
+    if (!key) return acc;
+    const value = rest.join("=");
+    try {
+      acc[key] = decodeURIComponent(value);
+    } catch {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
+}
+
+function getUserTokenFromReq(req) {
+  const auth = req.headers.authorization || "";
+  const [, bearerToken] = auth.split(" ");
+  if (bearerToken && userTokens.has(bearerToken)) {
+    return bearerToken;
+  }
+  const cookies = parseCookies(req.headers.cookie);
+  const cookieToken = cookies?.userToken;
+  if (cookieToken && userTokens.has(cookieToken)) {
+    return cookieToken;
+  }
+  return null;
+}
+
+function issueUserToken(res, userId) {
+  const token = crypto.randomBytes(16).toString("hex");
+  userTokens.set(token, { userId, issuedAt: Date.now() });
+  res.setHeader(
+    "Set-Cookie",
+    `userToken=${token}; HttpOnly; Path=/; Max-Age=${
+      7 * 24 * 60 * 60
+    }; SameSite=Lax`
+  );
+  return token;
+}
+
+function clearUserToken(res, token) {
+  if (token) {
+    userTokens.delete(token);
+  }
+  res.setHeader(
+    "Set-Cookie",
+    "userToken=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax"
+  );
+}
 
 function authMiddleware(req, res, next) {
   const h = req.headers.authorization || "";
@@ -167,6 +239,19 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
+}
+
+async function userAuthMiddleware(req, res, next) {
+  const token = getUserTokenFromReq(req);
+  if (token) {
+    req.userToken = token;
+    req.userInfo = userTokens.get(token);
+    return next();
+  }
+  if (req.accepts("html")) {
+    return res.redirect("/register.html");
+  }
+  return res.status(401).json({ error: "Utente non autenticato" });
 }
 
 // --- LOGIN ---
@@ -179,6 +264,79 @@ app.post("/api/login", async (req, res) => {
   }
   return res.status(401).json({ error: "Credenziali non valide" });
 });
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  if (!stored || typeof stored !== "string") return false;
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const candidate = crypto.scryptSync(password, salt, 64).toString("hex");
+  if (hash.length !== candidate.length) return false;
+  return crypto.timingSafeEqual(
+    Buffer.from(hash, "hex"),
+    Buffer.from(candidate, "hex")
+  );
+}
+
+app.post("/api/register", async (req, res) => {
+  const { email, password } = req.body || {};
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail || !password || password.length < 6) {
+    return res.status(400).json({ error: "Dati non validi" });
+  }
+  const users = await loadUsers();
+  const exists = users.some((u) => u.email === normalizedEmail);
+  if (exists) {
+    return res.status(409).json({ error: "Utente già registrato" });
+  }
+  const newUser = {
+    id: crypto.randomUUID(),
+    email: normalizedEmail,
+    password: hashPassword(password),
+    createdAt: new Date().toISOString(),
+  };
+  users.push(newUser);
+  await saveUsers(users);
+  issueUserToken(res, newUser.id);
+  return res.json({ ok: true });
+});
+
+app.post("/api/login-user", async (req, res) => {
+  const { email, password } = req.body || {};
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedEmail || !password) {
+    return res.status(400).json({ error: "Dati non validi" });
+  }
+  const users = await loadUsers();
+  const user = users.find((u) => u.email === normalizedEmail);
+  if (!user || !verifyPassword(password, user.password)) {
+    return res.status(401).json({ error: "Credenziali non valide" });
+  }
+  issueUserToken(res, user.id);
+  return res.json({ ok: true });
+});
+
+app.post("/api/logout-user", async (req, res) => {
+  const token = getUserTokenFromReq(req);
+  clearUserToken(res, token);
+  res.json({ ok: true });
+});
+
+// Rotta protetta per index
+app.get(["/", "/index.html"], userAuthMiddleware, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
+});
+
+// static assets (index escluso)
+app.use(express.static(PUBLIC_DIR, { index: false }));
 
 // Legge data/operators.xlsx (colonna OPERATORI) e restituisce la lista
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");

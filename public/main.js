@@ -50,6 +50,22 @@ function setTodayMaxDate(inputId) {
 document.addEventListener("DOMContentLoaded", () => {
   loadOptions();
   setTodayMaxDate("data");
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/api/logout-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+      } catch (err) {
+        console.error("Errore durante il logout", err);
+      } finally {
+        window.location.href = "/register.html";
+      }
+    });
+  }
 
   const form = document.getElementById("entryForm");
   const msg = document.getElementById("msg");
