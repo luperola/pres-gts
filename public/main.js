@@ -48,8 +48,33 @@ function setTodayMaxDate(inputId) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  const geoInput = document.getElementById("geoLocation");
+  let cachedLocation = "";
+
+  async function fetchLocation() {
+    try {
+      const res = await fetch("/api/geolocation", {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data?.location === "string") {
+        cachedLocation = data.location.trim();
+      }
+    } catch (err) {
+      console.warn("Impossibile ottenere la geolocalizzazione", err);
+    } finally {
+      if (geoInput) {
+        geoInput.value = cachedLocation;
+      }
+    }
+  }
+
   loadOptions();
   setTodayMaxDate("data");
+  fetchLocation();
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
@@ -79,6 +104,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ore: document.getElementById("ore").value.trim(),
       data: ymdToDmy(document.getElementById("data").value.trim()),
       descrizione: document.getElementById("descrizione").value.trim(),
+      location:
+        (geoInput?.value || cachedLocation || "").toString().trim() || null,
     };
     const res = await fetch("/api/entry", {
       method: "POST",

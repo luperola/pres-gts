@@ -36,6 +36,87 @@ const USERS_PATH = path.join(__dirname, "data", "users.json");
 
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 
+function extractClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const rawIp = Array.isArray(forwarded)
+    ? forwarded[0]
+    : typeof forwarded === "string"
+    ? forwarded.split(",")[0]
+    : req.socket?.remoteAddress;
+  if (!rawIp) return null;
+  const ip = rawIp.replace(/^::ffff:/, "").trim();
+  if (!ip) return null;
+  if (ip === "127.0.0.1" || ip === "::1") return null;
+  if (ip.includes(":")) {
+    const lower = ip.toLowerCase();
+    if (
+      lower.startsWith("fe80") ||
+      lower.startsWith("fc") ||
+      lower.startsWith("fd")
+    ) {
+      return null;
+    }
+  }
+  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return null;
+  if (ip.startsWith("172.")) {
+    const second = Number(ip.split(".")[1]);
+    if (second >= 16 && second <= 31) return null;
+  }
+  return ip;
+}
+
+async function fetchWithTimeout(url, ms = 3000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveLocationFromRequest(req) {
+  const ip = extractClientIp(req);
+  if (!ip) return null;
+  const endpoints = [`https://ipapi.co/${ip}/json/`, `https://ipwho.is/${ip}`];
+  for (const url of endpoints) {
+    try {
+      const data = await fetchWithTimeout(url, 2500);
+      if (!data) continue;
+      const city =
+        typeof data.city === "string" && data.city.trim()
+          ? data.city.trim()
+          : typeof data.town === "string" && data.town.trim()
+          ? data.town.trim()
+          : null;
+      const region =
+        typeof data.region === "string" && data.region.trim()
+          ? data.region.trim()
+          : typeof data.state_prov === "string" && data.state_prov.trim()
+          ? data.state_prov.trim()
+          : null;
+      const country =
+        typeof data.country_name === "string" && data.country_name.trim()
+          ? data.country_name.trim()
+          : null;
+      const pieces = [city, region].filter(Boolean);
+      if (!pieces.length && country) {
+        pieces.push(country);
+      } else if (country && city && !region) {
+        pieces.push(country);
+      }
+      if (pieces.length) {
+        return pieces.join(", ");
+      }
+    } catch (err) {
+      // ignore endpoint errors and try next
+    }
+  }
+  return null;
+}
 async function ensureDataFile() {
   const dir = path.dirname(ENTRIES_PATH);
   await fs.mkdir(dir, { recursive: true });
@@ -334,6 +415,14 @@ app.post("/api/logout-user", async (req, res) => {
 app.get(["/", "/index.html"], userAuthMiddleware, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
+app.get("/api/geolocation", userAuthMiddleware, async (req, res) => {
+  try {
+    const location = await resolveLocationFromRequest(req);
+    res.json({ location: location || null });
+  } catch (err) {
+    res.json({ location: null });
+  }
+});
 
 // static assets (index escluso)
 app.use(express.static(PUBLIC_DIR, { index: false }));
@@ -472,8 +561,16 @@ app.get("/api/operators", async (req, res) => {
 // --- CREA VOCE (chiamato da index.html) ---
 app.post("/api/entry", async (req, res) => {
   try {
-    const { operator, cantiere, macchina, linea, ore, data, descrizione } =
-      req.body || {};
+    const {
+      operator,
+      cantiere,
+      macchina,
+      linea,
+      ore,
+      data,
+      descrizione,
+      location: locationFromBody,
+    } = req.body || {};
     // campi obbligatori (descrizione diventa facoltativa)
     if (
       !operator ||
@@ -503,6 +600,15 @@ app.post("/api/entry", async (req, res) => {
     const nextId = entries.length
       ? Math.max(...entries.map((e) => Number(e.id) || 0)) + 1
       : Date.now();
+    let normalizedLocation = "";
+    if (typeof locationFromBody === "string" && locationFromBody.trim()) {
+      normalizedLocation = locationFromBody.trim().slice(0, 120);
+    } else {
+      const lookedUp = await resolveLocationFromRequest(req);
+      if (lookedUp) {
+        normalizedLocation = lookedUp.slice(0, 120);
+      }
+    }
 
     const entry = {
       id: nextId,
@@ -513,6 +619,7 @@ app.post("/api/entry", async (req, res) => {
       ore: numOre,
       data, // DD/MM/YYYY
       descrizione: typeof descrizione === "string" ? descrizione.trim() : "", // <-- facoltativa
+      location: normalizedLocation || null,
     };
 
     entries.push(entry);
@@ -669,6 +776,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "Linea", key: "linea", width: 14 },
     { header: "Ore", key: "ore", width: 10 },
     { header: "Data", key: "data", width: 14 },
+    { header: "Località", key: "location", width: 26 },
     { header: "Descrizione", key: "descrizione", width: 40 },
     { header: "ID", key: "id", width: 10 },
   ];
@@ -681,6 +789,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       linea: e.linea ?? "",
       ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       data: e.data ?? "",
+      location: e.location ?? "",
       descrizione: e.descrizione ?? "",
       id: e.id ?? "",
     });
