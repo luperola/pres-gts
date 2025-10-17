@@ -49,13 +49,51 @@ function setTodayMaxDate(inputId) {
 
 document.addEventListener("DOMContentLoaded", () => {
   const geoInput = document.getElementById("geoLocation");
+  const geoBanner = document.getElementById("geoConsentBanner");
+  const geoBannerMessage = document.getElementById("geoConsentMessage");
+  const geoBannerStatus = document.getElementById("geoConsentStatus");
+  const geoBannerButton = document.getElementById("requestLocationBtn");
   let cachedLocation = "";
+  let pendingLocationPromise = null;
 
   function setLocation(value) {
     cachedLocation = typeof value === "string" ? value.trim() : "";
     if (geoInput) {
       geoInput.value = cachedLocation;
     }
+  }
+  function updateGeoStatus(text = "") {
+    if (!geoBannerStatus) return;
+    if (text) {
+      geoBannerStatus.textContent = text;
+      geoBannerStatus.classList.remove("d-none");
+    } else {
+      geoBannerStatus.textContent = "";
+      geoBannerStatus.classList.add("d-none");
+    }
+  }
+
+  function showGeoBanner(message, { status = "", showButton = true } = {}) {
+    if (!geoBanner) return;
+    geoBanner.classList.remove("d-none");
+    if (geoBannerMessage && message) {
+      geoBannerMessage.textContent = message;
+    }
+    updateGeoStatus(status);
+    if (geoBannerButton) {
+      if (showButton) {
+        geoBannerButton.classList.remove("d-none");
+        geoBannerButton.disabled = false;
+      } else {
+        geoBannerButton.classList.add("d-none");
+      }
+    }
+  }
+
+  function hideGeoBanner() {
+    if (!geoBanner) return;
+    geoBanner.classList.add("d-none");
+    updateGeoStatus("");
   }
 
   async function fetchLocation() {
@@ -67,7 +105,8 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       if (!res.ok) return;
       const data = await res.json();
-      if (typeof data?.location === "string") {
+
+      if (!cachedLocation && typeof data?.location === "string") {
         setLocation(data.location);
       }
     } catch (err) {
@@ -114,14 +153,164 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  requestBrowserLocation()
-    .then((location) => {
-      setLocation(location);
-    })
-    .catch((err) => {
-      console.warn("Geolocalizzazione browser non disponibile", err);
-      fetchLocation();
+  function describeGeoError(err) {
+    const defaultMessage = {
+      message:
+        "Non è stato possibile ottenere automaticamente la posizione dal browser.",
+      status:
+        "Verifica le impostazioni del dispositivo e prova di nuovo a concedere l'autorizzazione.",
+      showButton: true,
+    };
+    if (!err || typeof err !== "object") {
+      return defaultMessage;
+    }
+    if (err.code === 1 || err.PERMISSION_DENIED === err.code) {
+      return {
+        message: "La richiesta di geolocalizzazione è stata bloccata.",
+        status:
+          'Consenti l\'accesso alla posizione dalle impostazioni del browser e poi clicca su "Attiva geolocalizzazione".',
+        showButton: true,
+      };
+    }
+    if (err.code === 2 || err.POSITION_UNAVAILABLE === err.code) {
+      return {
+        message: "Il dispositivo non riesce a rilevare la posizione.",
+        status:
+          "Controlla che GPS o servizi di posizione siano attivi e riprova.",
+        showButton: true,
+      };
+    }
+    if (err.code === 3 || err.TIMEOUT === err.code) {
+      return {
+        message: "Il tentativo di ottenere la posizione è scaduto.",
+        status: "Assicurati di avere segnale sufficiente e riprova.",
+        showButton: true,
+      };
+    }
+    if (typeof err.message === "string" && /secure/i.test(err.message)) {
+      return {
+        message:
+          "Il browser richiede una connessione sicura (HTTPS) per la geolocalizzazione.",
+        status:
+          "Apri la pagina tramite HTTPS o da localhost, poi riprova a consentire l'accesso alla posizione.",
+        showButton: true,
+      };
+    }
+    return defaultMessage;
+  }
+
+  async function obtainBrowserLocation({ forcePrompt = false } = {}) {
+    if (!navigator?.geolocation) {
+      showGeoBanner("Questo dispositivo non supporta la geolocalizzazione.", {
+        status:
+          "I dati verranno salvati senza coordinate. Se possibile usa un dispositivo compatibile.",
+        showButton: false,
+      });
+      return null;
+    }
+    if (cachedLocation && !forcePrompt) {
+      return cachedLocation;
+    }
+    if (pendingLocationPromise) {
+      return pendingLocationPromise;
+    }
+    if (geoBannerButton) {
+      geoBannerButton.disabled = true;
+    }
+    showGeoBanner(
+      "Stiamo tentando di rilevare automaticamente la tua posizione...",
+      { status: "Attendi qualche secondo.", showButton: false }
+    );
+    pendingLocationPromise = requestBrowserLocation()
+      .then((location) => {
+        setLocation(location);
+        hideGeoBanner();
+        return location;
+      })
+      .catch((err) => {
+        const info = describeGeoError(err);
+        showGeoBanner(info.message, {
+          status: info.status,
+          showButton: info.showButton,
+        });
+        return null;
+      })
+      .finally(() => {
+        if (geoBannerButton) {
+          geoBannerButton.disabled = false;
+        }
+        pendingLocationPromise = null;
+      });
+    return pendingLocationPromise;
+  }
+
+  async function initGeolocation() {
+    const tryFetchLocation = () => {
+      obtainBrowserLocation().catch(() => {
+        // errore già gestito in obtainBrowserLocation
+      });
+    };
+
+    if (navigator?.permissions?.query) {
+      try {
+        const status = await navigator.permissions.query({
+          name: "geolocation",
+        });
+        const handleState = (state) => {
+          if (state === "granted") {
+            hideGeoBanner();
+            obtainBrowserLocation();
+          } else if (state === "prompt") {
+            showGeoBanner(
+              "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
+              {
+                status:
+                  'Quando compare la finestra del browser scegli "Consenti".',
+                showButton: true,
+              }
+            );
+            tryFetchLocation();
+          } else {
+            showGeoBanner(
+              "La geolocalizzazione è disabilitata per questo sito.",
+              {
+                status:
+                  'Sblocca l\'autorizzazione dalle impostazioni del browser e poi premi "Attiva geolocalizzazione".',
+                showButton: true,
+              }
+            );
+          }
+        };
+        handleState(status.state);
+        status.onchange = () => handleState(status.state);
+        return;
+      } catch (err) {
+        console.warn("Impossibile verificare lo stato dei permessi", err);
+      }
+    }
+
+    showGeoBanner(
+      "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
+      {
+        status: 'Quando compare la finestra del browser scegli "Consenti".',
+        showButton: true,
+      }
+    );
+    tryFetchLocation();
+  }
+
+  if (geoBannerButton) {
+    geoBannerButton.addEventListener("click", () => {
+      obtainBrowserLocation({ forcePrompt: true }).then((location) => {
+        if (!location) {
+          fetchLocation();
+        }
+      });
     });
+  }
+
+  initGeolocation();
+  fetchLocation();
   loadOptions();
   setTodayMaxDate("data");
 
