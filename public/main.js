@@ -51,6 +51,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const geoInput = document.getElementById("geoLocation");
   let cachedLocation = "";
 
+  function setLocation(value) {
+    cachedLocation = typeof value === "string" ? value.trim() : "";
+    if (geoInput) {
+      geoInput.value = cachedLocation;
+    }
+  }
+
   async function fetchLocation() {
     try {
       const res = await fetch("/api/geolocation", {
@@ -61,20 +68,63 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) return;
       const data = await res.json();
       if (typeof data?.location === "string") {
-        cachedLocation = data.location.trim();
+        setLocation(data.location);
       }
     } catch (err) {
-      console.warn("Impossibile ottenere la geolocalizzazione", err);
-    } finally {
-      if (geoInput) {
-        geoInput.value = cachedLocation;
-      }
+      console.warn("Impossibile ottenere la geolocalizzazione dal server", err);
     }
   }
 
+  async function requestBrowserLocation() {
+    if (!navigator?.geolocation) {
+      throw new Error("Geolocalizzazione non supportata");
+    }
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords || {};
+          const coords = [latitude, longitude]
+            .map((v) =>
+              typeof v === "number" && Number.isFinite(v) ? v.toFixed(6) : null
+            )
+            .filter((v) => v !== null);
+          if (!coords.length) {
+            reject(new Error("Coordinate non disponibili"));
+            return;
+          }
+          let label = coords.join(", ");
+          if (
+            typeof accuracy === "number" &&
+            Number.isFinite(accuracy) &&
+            accuracy > 0
+          ) {
+            label += ` (±${Math.round(accuracy)}m)`;
+          }
+          resolve(label);
+        },
+        (err) => {
+          reject(err);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    });
+  }
+
+  requestBrowserLocation()
+    .then((location) => {
+      setLocation(location);
+    })
+    .catch((err) => {
+      console.warn("Geolocalizzazione browser non disponibile", err);
+      fetchLocation();
+    });
   loadOptions();
   setTodayMaxDate("data");
-  fetchLocation();
+
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", async () => {
