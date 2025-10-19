@@ -10,12 +10,13 @@ if (!connectionString) {
   );
 }
 
+const shouldUseSSL =
+  connectionString.includes("amazonaws.com") ||
+  process.env.PGSSLMODE === "require" ||
+  process.env.NODE_ENV === "production";
 const pool = new pg.Pool({
   connectionString,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
+  ssl: shouldUseSSL ? { rejectUnauthorized: false } : false,
 });
 
 export async function query(text, params = []) {
