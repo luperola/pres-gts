@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import ExcelJS from "exceljs";
 import bodyParser from "body-parser";
 import { fileURLToPath as f2p } from "url";
+import fs from "fs/promises";
 import xlsx from "xlsx";
 import { query } from "./db.js";
 
@@ -28,7 +29,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
 
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
-
+const INIT_SQL_PATH = path.join(__dirname, "sql", "init.sql");
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 
@@ -152,7 +153,25 @@ async function fetchOptions() {
       )
     );
   }
+
   return initial;
+}
+
+async function initializeDatabase() {
+  try {
+    const sql = await fs.readFile(INIT_SQL_PATH, "utf8");
+    if (!sql.trim()) {
+      return;
+    }
+    await query(sql);
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      console.warn("File init.sql non trovato, nessuna migrazione eseguita.");
+      return;
+    }
+    console.error("Errore durante l'inizializzazione del database", err);
+    throw err;
+  }
 }
 
 async function ensureOptionSeed() {
@@ -860,6 +879,14 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 });
 
 // --- Avvio ---
-app.listen(PORT, () => {
-  console.log(`Server attivo su http://localhost:${PORT}`);
-});
+initializeDatabase()
+  .then(() => ensureOptionSeed())
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server attivo su http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Impossibile avviare il server", err);
+    process.exit(1);
+  });
