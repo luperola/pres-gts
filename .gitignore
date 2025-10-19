@@ -1,5 +1,4 @@
 node_modules/
 .env
-data/entries.json
-data/users.json
+data/*.json
 data/*.xlsx

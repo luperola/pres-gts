@@ -1,6 +1,5 @@
 // app.js — ESM completo (fix Windows __dirname + GET /)
 
-import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import express from "express";
@@ -9,6 +8,7 @@ import ExcelJS from "exceljs";
 import bodyParser from "body-parser";
 import { fileURLToPath as f2p } from "url";
 import xlsx from "xlsx";
+import { query } from "./db.js";
 
 dotenv.config();
 
@@ -29,12 +29,8 @@ const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-// --- Storage helpers (entries.json) ---
-const ENTRIES_PATH = path.join(__dirname, "data", "entries.json");
-const OPTIONS_PATH = path.join(__dirname, "data", "operators.json");
-const USERS_PATH = path.join(__dirname, "data", "users.json");
-
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
+const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 
 function extractClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -117,121 +113,140 @@ async function resolveLocationFromRequest(req) {
   }
   return null;
 }
-async function ensureDataFile() {
-  const dir = path.dirname(ENTRIES_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  try {
-    await fs.access(ENTRIES_PATH);
-  } catch {
-    await fs.writeFile(ENTRIES_PATH, "[]", "utf8");
-  }
+function normalizeOptionValue(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-async function loadEntries() {
-  await ensureDataFile();
-  const raw = await fs.readFile(ENTRIES_PATH, "utf8").catch(() => "[]");
-  try {
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
+function sortOptionValues(values) {
+  return values.sort((a, b) =>
+    a.localeCompare(b, "it", { sensitivity: "base", ignorePunctuation: true })
+  );
 }
 
-async function saveEntries(arr) {
-  await ensureDataFile();
-  await fs.writeFile(ENTRIES_PATH, JSON.stringify(arr, null, 2), "utf8");
-}
-
-async function ensureOptionsFile() {
-  const dir = path.dirname(OPTIONS_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  try {
-    await fs.access(OPTIONS_PATH);
-  } catch {
-    const initial = {
-      operators: [],
-      cantieri: [],
-      macchine: [],
-      linee: [],
-    };
-    try {
-      const seededOperators = readOperatorsFromXlsx();
-      if (seededOperators.length) {
-        initial.operators = seededOperators;
-      }
-    } catch {
-      // ignore se il file xlsx non è disponibile
-    }
-    await fs.writeFile(OPTIONS_PATH, JSON.stringify(initial, null, 2), "utf8");
-  }
-}
-
-function normalizeOptions(obj) {
-  const norm = {
+async function fetchOptions() {
+  const initial = {
     operators: [],
     cantieri: [],
     macchine: [],
     linee: [],
   };
+  const { rows } = await query(
+    `SELECT category, value
+     FROM option_categories
+     ORDER BY category, value`
+  );
+
+  for (const row of rows) {
+    const category = OPTION_CATEGORIES.includes(row.category)
+      ? row.category
+      : null;
+    const value = normalizeOptionValue(row.value);
+    if (!category || !value) continue;
+    initial[category].push(value);
+  }
+
   for (const key of OPTION_CATEGORIES) {
-    const arr = Array.isArray(obj?.[key]) ? obj[key] : [];
-    norm[key] = arr
-      .map((v) => (typeof v === "string" ? v.trim() : ""))
-      .filter(Boolean)
-      .filter((v, idx, self) => {
-        return (
-          self.findIndex((x) => x.toLowerCase() === String(v).toLowerCase()) ===
-          idx
-        );
-      })
-      .sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
+    initial[key] = sortOptionValues(
+      Array.from(
+        new Set(initial[key].map((v) => v.trim()).filter((v) => v.length > 0))
+      )
+    );
   }
-  return norm;
+  return initial;
 }
 
-async function loadOptions() {
-  await ensureOptionsFile();
-  const raw = await fs.readFile(OPTIONS_PATH, "utf8").catch(() => "{}");
+async function ensureOptionSeed() {
+  const { rows } = await query(
+    `SELECT COUNT(*)::int AS count FROM option_categories WHERE category = 'operators'`
+  );
+  if (!rows.length || rows[0].count > 0) {
+    return;
+  }
   try {
-    const parsed = JSON.parse(raw);
-    return normalizeOptions(parsed);
+    const operators = readOperatorsFromXlsx();
+    if (!operators.length) return;
+    for (const name of operators) {
+      await query(
+        `INSERT INTO option_categories (category, value)
+         VALUES ('operators', $1)
+         ON CONFLICT (category, value) DO NOTHING`,
+        [name]
+      );
+    }
   } catch {
-    return normalizeOptions({});
+    // ignore se non riusciamo a leggere il file
   }
 }
 
-async function saveOptions(data) {
-  await ensureOptionsFile();
-  const normalized = normalizeOptions(data);
-  await fs.writeFile(OPTIONS_PATH, JSON.stringify(normalized, null, 2), "utf8");
-  return normalized;
-}
-
-async function ensureUsersFile() {
-  const dir = path.dirname(USERS_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  try {
-    await fs.access(USERS_PATH);
-  } catch {
-    await fs.writeFile(USERS_PATH, "[]", "utf8");
+async function addOption(category, value) {
+  const normalizedCategoryKey =
+    typeof category === "string" ? category.toLowerCase() : "";
+  const normalizedCategory = OPTION_CATEGORIES.includes(normalizedCategoryKey)
+    ? normalizedCategoryKey
+    : null;
+  const normalizedValue = normalizeOptionValue(value);
+  if (!normalizedCategory || !normalizedValue) {
+    throw new Error("Categoria o valore non valido");
   }
-}
 
-async function loadUsers() {
-  await ensureUsersFile();
-  const raw = await fs.readFile(USERS_PATH, "utf8").catch(() => "[]");
-  try {
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
+  const existing = await query(
+    `SELECT id FROM option_categories
+     WHERE category = $1 AND LOWER(value) = LOWER($2)
+     LIMIT 1`,
+    [normalizedCategory, normalizedValue]
+  );
+  if (existing.rows.length === 0) {
+    await query(
+      `INSERT INTO option_categories (category, value)
+       VALUES ($1, $2)
+       ON CONFLICT (category, value) DO NOTHING`,
+      [normalizedCategory, normalizedValue]
+    );
   }
+  return fetchOptions();
 }
 
-async function saveUsers(users) {
-  await ensureUsersFile();
-  await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), "utf8");
+async function deleteOption(category, value) {
+  const normalizedCategoryKey =
+    typeof category === "string" ? category.toLowerCase() : "";
+  const normalizedCategory = OPTION_CATEGORIES.includes(normalizedCategoryKey)
+    ? normalizedCategoryKey
+    : null;
+  const normalizedValue = normalizeOptionValue(value);
+  if (!normalizedCategory || !normalizedValue) {
+    throw new Error("Categoria o valore non valido");
+  }
+  const result = await query(
+    `DELETE FROM option_categories
+     WHERE category = $1 AND LOWER(value) = LOWER($2)
+     RETURNING id`,
+    [normalizedCategory, normalizedValue]
+  );
+  if (result.rowCount === 0) {
+    const options = await fetchOptions();
+    const err = new Error("Voce non trovata");
+    err.options = options;
+    throw err;
+  }
+  return fetchOptions();
+}
+
+async function findUserByEmail(email) {
+  return query(
+    `SELECT id, email, password_hash
+     FROM users
+     WHERE email = $1
+     LIMIT 1`,
+    [email]
+  ).then((res) => (res.rows.length ? res.rows[0] : null));
+}
+
+async function createUser({ id, email, passwordHash }) {
+  await query(
+    `INSERT INTO users (id, email, password_hash)
+     VALUES ($1, $2, $3)`,
+    [id, email, passwordHash]
+  );
 }
 
 function readOperatorsFromXlsx() {
@@ -250,14 +265,168 @@ function readOperatorsFromXlsx() {
     .sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
 }
 
-// --- Utility date DD/MM/YYYY ---
-function dmyToKey(dmy) {
-  if (!dmy || typeof dmy !== "string") return null;
-  const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+function dmyToIso(dmy) {
+  const m = dmy?.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
-  return Number(`${yyyy}${mm}${dd}`);
+  return `${yyyy}-${mm}-${dd}`;
 }
+
+async function createEntryInDb(entry, req) {
+  const {
+    operator,
+    cantiere,
+    macchina,
+    linea,
+    ore,
+    data,
+    descrizione = "",
+    location: locationFromBody,
+  } = entry;
+
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+    throw new Error("Formato data non valido (usa DD/MM/YYYY).");
+  }
+  const workDateIso = dmyToIso(data);
+  if (!workDateIso) {
+    throw new Error("Formato data non valido (usa DD/MM/YYYY).");
+  }
+
+  let normalizedLocation = "";
+  if (typeof locationFromBody === "string" && locationFromBody.trim()) {
+    normalizedLocation = locationFromBody.trim().slice(0, 120);
+  } else {
+    const lookedUp = await resolveLocationFromRequest(req);
+    if (lookedUp) {
+      normalizedLocation = lookedUp.slice(0, 120);
+    }
+  }
+
+  const { rows } = await query(
+    `INSERT INTO entries (
+       operator,
+       cantiere,
+       macchina,
+       linea,
+       ore,
+       data_dmy,
+       work_date,
+       descrizione,
+       location
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING id,
+               operator,
+               cantiere,
+               macchina,
+               linea,
+               ore::float AS ore,
+               to_char(work_date, 'DD/MM/YYYY') AS data,
+               descrizione,
+               location`,
+    [
+      typeof operator === "string" ? operator.trim() : operator,
+      typeof cantiere === "string" ? cantiere.trim() : cantiere,
+      typeof macchina === "string" ? macchina.trim() : macchina,
+      typeof linea === "string" ? linea.trim() : linea,
+      Number(ore),
+      data,
+      workDateIso,
+      typeof descrizione === "string" ? descrizione.trim() : "",
+      normalizedLocation || null,
+    ]
+  );
+  return rows[0];
+}
+
+function buildTokenClauses(column, value, params) {
+  const tokens = String(value)
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const clauses = [];
+  for (const token of tokens) {
+    params.push(`%${token}%`);
+    clauses.push(`${column} ILIKE $${params.length}`);
+  }
+  return clauses;
+}
+
+async function searchEntriesInDb(filters = {}) {
+  const clauses = [];
+  const params = [];
+
+  if (filters.cantiere) {
+    clauses.push(...buildTokenClauses("cantiere", filters.cantiere, params));
+  }
+  if (filters.macchina) {
+    params.push(String(filters.macchina));
+    clauses.push(`LOWER(macchina) = LOWER($${params.length})`);
+  }
+  if (filters.linea) {
+    params.push(String(filters.linea));
+    clauses.push(`LOWER(linea) = LOWER($${params.length})`);
+  }
+  if (filters.operator) {
+    clauses.push(...buildTokenClauses("operator", filters.operator, params));
+  }
+  if (filters.descrContains) {
+    params.push(`%${String(filters.descrContains)}%`);
+    clauses.push(`descrizione ILIKE $${params.length}`);
+  }
+  if (filters.dataFrom) {
+    const iso = dmyToIso(filters.dataFrom);
+    if (iso) {
+      params.push(iso);
+      clauses.push(`work_date >= $${params.length}`);
+    }
+  }
+  if (filters.dataTo) {
+    const iso = dmyToIso(filters.dataTo);
+    if (iso) {
+      params.push(iso);
+      clauses.push(`work_date <= $${params.length}`);
+    }
+  }
+
+  const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const { rows } = await query(
+    `SELECT id,
+            operator,
+            cantiere,
+            macchina,
+            linea,
+            ore::float AS ore,
+            to_char(work_date, 'DD/MM/YYYY') AS data,
+            descrizione,
+            location
+     FROM entries
+     ${whereClause}
+     ORDER BY work_date DESC, id DESC`,
+    params
+  );
+  return rows;
+}
+
+async function deleteEntryById(id) {
+  const result = await query(`DELETE FROM entries WHERE id = $1 RETURNING id`, [
+    id,
+  ]);
+  return result.rowCount;
+}
+
+async function deleteEntriesByIds(ids) {
+  const result = await query(
+    `DELETE FROM entries WHERE id = ANY($1::bigint[]) RETURNING id`,
+    [ids]
+  );
+  return result.rowCount;
+}
+
+ensureOptionSeed().catch((err) => {
+  console.error("Impossibile inizializzare le opzioni", err);
+});
 
 // --- Auth semplice a token ---
 const validTokens = new Set();
@@ -371,19 +540,21 @@ app.post("/api/register", async (req, res) => {
   if (!normalizedEmail || !password || password.length < 6) {
     return res.status(400).json({ error: "Dati non validi" });
   }
-  const users = await loadUsers();
-  const exists = users.some((u) => u.email === normalizedEmail);
-  if (exists) {
+
+  const existing = await findUserByEmail(normalizedEmail);
+  if (existing) {
     return res.status(409).json({ error: "Utente già registrato" });
   }
   const newUser = {
     id: crypto.randomUUID(),
     email: normalizedEmail,
-    password: hashPassword(password),
-    createdAt: new Date().toISOString(),
+    passwordHash: hashPassword(password),
   };
-  users.push(newUser);
-  await saveUsers(users);
+  try {
+    await createUser(newUser);
+  } catch (err) {
+    return res.status(500).json({ error: "Impossibile registrare l'utente" });
+  }
   issueUserToken(res, newUser.id);
   return res.json({ ok: true });
 });
@@ -396,9 +567,8 @@ app.post("/api/login-user", async (req, res) => {
   if (!normalizedEmail || !password) {
     return res.status(400).json({ error: "Dati non validi" });
   }
-  const users = await loadUsers();
-  const user = users.find((u) => u.email === normalizedEmail);
-  if (!user || !verifyPassword(password, user.password)) {
+  const user = await findUserByEmail(normalizedEmail);
+  if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: "Credenziali non valide" });
   }
   issueUserToken(res, user.id);
@@ -427,12 +597,10 @@ app.get("/api/geolocation", userAuthMiddleware, async (req, res) => {
 // static assets (index escluso)
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
-// Legge data/operators.xlsx (colonna OPERATORI) e restituisce la lista
-const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
-
 app.get("/api/options", async (req, res) => {
   try {
-    const options = await loadOptions();
+    await ensureOptionSeed();
+    const options = await fetchOptions();
     res.json(options);
   } catch (err) {
     res.status(500).json({ error: "Impossibile leggere le opzioni" });
@@ -440,21 +608,27 @@ app.get("/api/options", async (req, res) => {
 });
 
 app.post("/api/options", authMiddleware, async (req, res) => {
-  const category = String(req.body?.category || "").toLowerCase();
-  const value =
-    typeof req.body?.value === "string" ? req.body.value.trim() : "";
-  if (!OPTION_CATEGORIES.includes(category) || !value) {
-    return res.status(400).json({ error: "Categoria o valore non valido" });
+  const payload = req.body || {};
+  if (typeof payload !== "object" || payload === null) {
+    return res.status(400).json({ error: "Dati non validi" });
   }
   try {
-    const options = await loadOptions();
-    const arr = options[category];
-    const exists = arr.some((v) => v.toLowerCase() === value.toLowerCase());
-    if (!exists) {
-      arr.push(value);
+    await ensureOptionSeed();
+    if (payload.category && payload.value !== undefined) {
+      await addOption(payload.category, payload.value);
     }
-    const saved = await saveOptions(options);
-    res.json({ ok: true, options: saved, created: !exists });
+    for (const key of OPTION_CATEGORIES) {
+      const values = Array.isArray(payload[key])
+        ? payload[key]
+        : payload[key]
+        ? [payload[key]]
+        : [];
+      for (const rawValue of values) {
+        await addOption(key, rawValue);
+      }
+    }
+    const options = await fetchOptions();
+    res.json({ ok: true, options });
   } catch (err) {
     res.status(500).json({ error: "Impossibile salvare" });
   }
@@ -468,84 +642,23 @@ app.delete("/api/options", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "Categoria o valore non valido" });
   }
   try {
-    const options = await loadOptions();
-    const arr = options[category];
-    const filtered = arr.filter((v) => v.toLowerCase() !== value.toLowerCase());
-    if (filtered.length === arr.length) {
+    await ensureOptionSeed();
+    const options = await deleteOption(category, value);
+    res.json({ ok: true, options });
+  } catch (err) {
+    if (err.message === "Voce non trovata") {
       return res
         .status(404)
-        .json({ error: "Voce non trovata", options: options });
+        .json({ error: "Voce non trovata", options: err.options });
     }
-    options[category] = filtered;
-    const saved = await saveOptions(options);
-    res.json({ ok: true, options: saved });
-  } catch (err) {
     res.status(500).json({ error: "Impossibile salvare" });
   }
 });
 
 app.get("/api/operators", async (req, res) => {
   try {
-    const options = await loadOptions();
-    res.json({ operators: options.operators });
-  } catch (err) {
-    try {
-      const fallback = readOperatorsFromXlsx();
-      res.json({ operators: fallback });
-    } catch {
-      res.json({ operators: [] });
-    }
-  }
-});
-
-app.post("/api/options", authMiddleware, async (req, res) => {
-  const category = String(req.body?.category || "").toLowerCase();
-  const value =
-    typeof req.body?.value === "string" ? req.body.value.trim() : "";
-  if (!OPTION_CATEGORIES.includes(category) || !value) {
-    return res.status(400).json({ error: "Categoria o valore non valido" });
-  }
-  try {
-    const options = await loadOptions();
-    const arr = options[category];
-    const exists = arr.some((v) => v.toLowerCase() === value.toLowerCase());
-    if (!exists) {
-      arr.push(value);
-    }
-    const saved = await saveOptions(options);
-    res.json({ ok: true, options: saved, created: !exists });
-  } catch (err) {
-    res.status(500).json({ error: "Impossibile salvare" });
-  }
-});
-
-app.delete("/api/options", authMiddleware, async (req, res) => {
-  const category = String(req.body?.category || "").toLowerCase();
-  const value =
-    typeof req.body?.value === "string" ? req.body.value.trim() : "";
-  if (!OPTION_CATEGORIES.includes(category) || !value) {
-    return res.status(400).json({ error: "Categoria o valore non valido" });
-  }
-  try {
-    const options = await loadOptions();
-    const arr = options[category];
-    const filtered = arr.filter((v) => v.toLowerCase() !== value.toLowerCase());
-    if (filtered.length === arr.length) {
-      return res
-        .status(404)
-        .json({ error: "Voce non trovata", options: options });
-    }
-    options[category] = filtered;
-    const saved = await saveOptions(options);
-    res.json({ ok: true, options: saved });
-  } catch (err) {
-    res.status(500).json({ error: "Impossibile salvare" });
-  }
-});
-
-app.get("/api/operators", async (req, res) => {
-  try {
-    const options = await loadOptions();
+    await ensureOptionSeed();
+    const options = await fetchOptions();
     res.json({ operators: options.operators });
   } catch (err) {
     try {
@@ -596,37 +709,24 @@ app.post("/api/entry", async (req, res) => {
       return res.status(400).json({ error: "Ore deve essere un numero." });
     }
 
-    const entries = await loadEntries();
-    const nextId = entries.length
-      ? Math.max(...entries.map((e) => Number(e.id) || 0)) + 1
-      : Date.now();
-    let normalizedLocation = "";
-    if (typeof locationFromBody === "string" && locationFromBody.trim()) {
-      normalizedLocation = locationFromBody.trim().slice(0, 120);
-    } else {
-      const lookedUp = await resolveLocationFromRequest(req);
-      if (lookedUp) {
-        normalizedLocation = lookedUp.slice(0, 120);
-      }
-    }
-
-    const entry = {
-      id: nextId,
-      operator: typeof operator === "string" ? operator.trim() : operator,
-      cantiere: typeof cantiere === "string" ? cantiere.trim() : cantiere,
-      macchina: typeof macchina === "string" ? macchina.trim() : macchina,
-      linea: typeof linea === "string" ? linea.trim() : linea,
-      ore: numOre,
-      data, // DD/MM/YYYY
-      descrizione: typeof descrizione === "string" ? descrizione.trim() : "", // <-- facoltativa
-      location: normalizedLocation || null,
-    };
-
-    entries.push(entry);
-    await saveEntries(entries);
+    const entry = await createEntryInDb(
+      {
+        operator,
+        cantiere,
+        macchina,
+        linea,
+        ore: numOre,
+        data,
+        descrizione,
+        location: locationFromBody,
+      },
+      req
+    );
     res.json({ ok: true, entry });
   } catch (err) {
-    res.status(500).json({ error: "Errore salvataggio." });
+    const message =
+      err instanceof Error && err.message ? err.message : "Errore salvataggio.";
+    res.status(500).json({ error: message });
   }
 });
 
@@ -642,57 +742,17 @@ app.post("/api/entries/search", authMiddleware, async (req, res) => {
     dataTo = null,
   } = req.body || {};
 
-  const fromKey = dataFrom ? dmyToKey(dataFrom) : null;
-  const toKey = dataTo ? dmyToKey(dataTo) : null;
-
-  const entries = await loadEntries();
-  const out = entries.filter((e) => {
-    if (cantiere) {
-      const hay = String(e.cantiere || "").toLowerCase();
-      const tokens = String(cantiere)
-        .toLowerCase()
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-      for (const t of tokens) {
-        if (!hay.includes(t)) return false;
-      }
-    }
-    if (
-      macchina &&
-      String(e.macchina || "").toLowerCase() !== String(macchina).toLowerCase()
-    )
-      return false;
-    if (
-      linea &&
-      String(e.linea || "").toLowerCase() !== String(linea).toLowerCase()
-    )
-      return false;
-    if (operator) {
-      const hay = String(e.operator || "").toLowerCase();
-      const tokens = String(operator)
-        .toLowerCase()
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-      for (const t of tokens) {
-        if (!hay.includes(t)) return false; // richiede che ogni parola cercata sia contenuta
-      }
-    }
-    if (descrContains) {
-      const hay = String(e.descrizione || "").toLowerCase();
-      const needle = String(descrContains).toLowerCase();
-      if (!hay.includes(needle)) return false;
-    }
-    if (fromKey || toKey) {
-      const k = dmyToKey(e.data);
-      if (fromKey && (k === null || k < fromKey)) return false;
-      if (toKey && (k === null || k > toKey)) return false;
-    }
-    return true;
+  const entries = await searchEntriesInDb({
+    cantiere,
+    macchina,
+    linea,
+    operator,
+    descrContains,
+    dataFrom,
+    dataTo,
   });
 
-  res.json({ entries: out });
+  res.json({ entries });
 });
 
 // --- DELETE singola riga ---
@@ -701,12 +761,10 @@ app.delete("/api/entries/:id", authMiddleware, async (req, res) => {
   if (!Number.isFinite(id))
     return res.status(400).json({ error: "ID non valido." });
 
-  const entries = await loadEntries();
-  const kept = entries.filter((e) => e.id !== id);
-  if (kept.length === entries.length) {
+  const deleted = await deleteEntryById(id);
+  if (!deleted) {
     return res.status(404).json({ error: "Riga non trovata." });
   }
-  await saveEntries(kept);
   res.json({ ok: true, deleted: 1 });
 });
 
@@ -716,11 +774,7 @@ app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
   if (!ids.length || ids.some((n) => !Number.isFinite(n))) {
     return res.status(400).json({ error: "Elenco ID non valido." });
   }
-  const set = new Set(ids);
-  const entries = await loadEntries();
-  const kept = entries.filter((e) => !set.has(e.id));
-  const deleted = entries.length - kept.length;
-  await saveEntries(kept);
+  const deleted = await deleteEntriesByIds(ids);
   res.json({ ok: true, deleted });
 });
 
