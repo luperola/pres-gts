@@ -32,19 +32,18 @@ async function loadOptions() {
   }
 }
 
-function ymdToDmy(ymd) {
-  if (!ymd) return "";
-  const [y, m, d] = ymd.split("-");
-  return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+function parseTimeToMinutes(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
 }
-function setTodayMaxDate(inputId) {
-  const el = document.getElementById(inputId);
-  if (!el) return;
-  const t = new Date();
-  const yyyy = t.getFullYear();
-  const mm = String(t.getMonth() + 1).padStart(2, "0");
-  const dd = String(t.getDate()).padStart(2, "0");
-  el.max = `${yyyy}-${mm}-${dd}`;
+function formatMinutesToHours(minutes) {
+  if (!Number.isFinite(minutes)) return "0.00";
+  return (minutes / 60).toFixed(2);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -312,7 +311,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initGeolocation();
   fetchLocation();
   loadOptions();
-  setTodayMaxDate("data");
 
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
@@ -335,13 +333,47 @@ document.addEventListener("DOMContentLoaded", () => {
   const msg = document.getElementById("msg");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const startTimeRaw = document.getElementById("oraInizio").value.trim();
+    const endTimeRaw = document.getElementById("oraFine").value.trim();
+    const breakSelect = document.getElementById("pausa");
+    const breakMinutes = Number(breakSelect?.value ?? "0");
+
+    const startMinutes = parseTimeToMinutes(startTimeRaw);
+    const endMinutes = parseTimeToMinutes(endTimeRaw);
+
+    if (startMinutes === null || endMinutes === null) {
+      msg.innerHTML =
+        '<div class="alert alert-danger">Inserisci orari validi (HH:MM).</div>';
+      return;
+    }
+    if (endMinutes <= startMinutes) {
+      msg.innerHTML =
+        "<div class=\"alert alert-danger\">L'ora di fine deve essere successiva all'inizio.</div>";
+      return;
+    }
+    const validBreak = [0, 30, 60, 90];
+    const breakValue = Number.isFinite(breakMinutes) ? breakMinutes : 0;
+    if (!validBreak.includes(breakValue)) {
+      msg.innerHTML =
+        '<div class="alert alert-danger">Seleziona un valore di pausa valido.</div>';
+      return;
+    }
+
+    const workedMinutes = endMinutes - startMinutes - breakValue;
+    if (workedMinutes <= 0) {
+      msg.innerHTML =
+        '<div class="alert alert-danger">La durata del lavoro deve essere positiva.</div>';
+      return;
+    }
+
     const payload = {
       operator: document.getElementById("operator").value.trim(),
       cantiere: document.getElementById("cantiere").value.trim(),
       macchina: document.getElementById("macchina").value.trim(),
       linea: document.getElementById("linea").value.trim(),
-      ore: document.getElementById("ore").value.trim(),
-      data: ymdToDmy(document.getElementById("data").value.trim()),
+      startTime: startTimeRaw,
+      endTime: endTimeRaw,
+      breakMinutes: breakValue,
       descrizione: document.getElementById("descrizione").value.trim(),
       location:
         (geoInput?.value || cachedLocation || "").toString().trim() || null,
@@ -353,10 +385,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     const out = await res.json();
     if (res.ok) {
-      msg.innerHTML =
-        '<div class="alert alert-success">Registrazione salvata.</div>';
+      const oreWorked =
+        typeof out?.entry?.ore === "number"
+          ? out.entry.ore.toFixed(2)
+          : formatMinutesToHours(workedMinutes);
+      msg.innerHTML = `<div class="alert alert-success">Registrazione salvata. Ore lavorate: ${oreWorked}</div>`;
       form.reset();
-      setTodayMaxDate("data");
+      setLocation(cachedLocation);
+      if (breakSelect) {
+        breakSelect.value = String(breakValue);
+      }
     } else {
       msg.innerHTML = `<div class="alert alert-danger">${
         out.error || "Errore"

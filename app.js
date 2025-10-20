@@ -127,6 +127,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const INIT_SQL_PATH = path.join(__dirname, "sql", "init.sql");
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
+const ALLOWED_BREAK_MINUTES = new Set([0, 30, 60, 90]);
 
 function extractClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -385,6 +386,42 @@ function dmyToIso(dmy) {
   const [, dd, mm, yyyy] = m;
   return `${yyyy}-${mm}-${dd}`;
 }
+function formatDateToDmy(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function formatDateToIso(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+function parseTimeStringToMinutes(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+function normalizeTimeString(value) {
+  const totalMinutes = parseTimeStringToMinutes(value);
+  if (totalMinutes === null) return null;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+    2,
+    "0"
+  )}`;
+}
 
 async function createEntryInDb(entry, req) {
   const {
@@ -393,16 +430,22 @@ async function createEntryInDb(entry, req) {
     macchina,
     linea,
     ore,
-    data,
+    dataDmy,
+    workDateIso,
     descrizione = "",
     location: locationFromBody,
+    startTime = null,
+    endTime = null,
+    breakMinutes = null,
   } = entry;
 
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataDmy)) {
     throw new Error("Formato data non valido (usa DD/MM/YYYY).");
   }
-  const workDateIso = dmyToIso(data);
-  if (!workDateIso) {
+  if (
+    typeof workDateIso !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(workDateIso)
+  ) {
     throw new Error("Formato data non valido (usa DD/MM/YYYY).");
   }
 
@@ -416,6 +459,23 @@ async function createEntryInDb(entry, req) {
     }
   }
 
+  const normalizedStart = normalizeTimeString(startTime);
+  const normalizedEnd = normalizeTimeString(endTime);
+  const breakValueRaw =
+    breakMinutes === undefined || breakMinutes === null
+      ? null
+      : Number(breakMinutes);
+  const normalizedBreak = Number.isFinite(breakValueRaw)
+    ? Number(breakValueRaw)
+    : null;
+
+  if (startTime && !normalizedStart) {
+    throw new Error("Ora inizio non valida (usa HH:MM).");
+  }
+  if (endTime && !normalizedEnd) {
+    throw new Error("Ora fine non valida (usa HH:MM).");
+  }
+
   const { rows } = await query(
     `INSERT INTO entries (
        operator,
@@ -426,9 +486,12 @@ async function createEntryInDb(entry, req) {
        data_dmy,
        work_date,
        descrizione,
-       location
+       location,
+       start_time,
+       end_time,
+       break_minutes
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING id,
                operator,
                cantiere,
@@ -437,17 +500,23 @@ async function createEntryInDb(entry, req) {
                ore::float AS ore,
                to_char(work_date, 'DD/MM/YYYY') AS data,
                descrizione,
-               location`,
+                location,
+               start_time,
+               end_time,
+               break_minutes::int AS break_minutes`,
     [
       typeof operator === "string" ? operator.trim() : operator,
       typeof cantiere === "string" ? cantiere.trim() : cantiere,
       typeof macchina === "string" ? macchina.trim() : macchina,
       typeof linea === "string" ? linea.trim() : linea,
       Number(ore),
-      data,
+      dataDmy,
       workDateIso,
       typeof descrizione === "string" ? descrizione.trim() : "",
       normalizedLocation || null,
+      normalizedStart,
+      normalizedEnd,
+      normalizedBreak,
     ]
   );
   return rows[0];
@@ -514,7 +583,10 @@ async function searchEntriesInDb(filters = {}) {
             ore::float AS ore,
             to_char(work_date, 'DD/MM/YYYY') AS data,
             descrizione,
-            location
+             location,
+            start_time,
+            end_time,
+            break_minutes::int AS break_minutes
      FROM entries
      ${whereClause}
      ORDER BY work_date DESC, id DESC`,
@@ -782,7 +854,6 @@ app.get("/api/operators", async (req, res) => {
     }
   }
 });
-
 // --- CREA VOCE (chiamato da index.html) ---
 // --- CREA VOCE (chiamato da index.html) ---
 app.post("/api/entry", async (req, res) => {
@@ -792,34 +863,63 @@ app.post("/api/entry", async (req, res) => {
       cantiere,
       macchina,
       linea,
-      ore,
-      data,
+      startTime,
+      endTime,
+      breakMinutes,
       descrizione,
       location: locationFromBody,
     } = req.body || {};
-    // campi obbligatori (descrizione diventa facoltativa)
-    if (
-      !operator ||
-      !cantiere ||
-      !macchina ||
-      !linea ||
-      ore === undefined ||
-      !data
-    ) {
+
+    if (!operator || !cantiere || !macchina || !linea) {
       return res.status(400).json({
         error: "Tutti i campi sono obbligatori (tranne descrizione).",
       });
     }
-    // data in formato DD/MM/YYYY
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+    const startMinutes = parseTimeStringToMinutes(startTime);
+    if (startMinutes === null) {
       return res
         .status(400)
-        .json({ error: "Formato data non valido (usa DD/MM/YYYY)." });
+        .json({ error: "Ora inizio non valida (usa HH:MM)." });
+    }
+    const endMinutes = parseTimeStringToMinutes(endTime);
+    if (endMinutes === null) {
+      return res
+        .status(400)
+        .json({ error: "Ora fine non valida (usa HH:MM)." });
+    }
+    if (endMinutes <= startMinutes) {
+      return res
+        .status(400)
+        .json({ error: "L'ora di fine deve essere successiva all'inizio." });
+    }
+    const parsedBreak =
+      breakMinutes === undefined || breakMinutes === null
+        ? 0
+        : Number(breakMinutes);
+    if (
+      !Number.isFinite(parsedBreak) ||
+      !ALLOWED_BREAK_MINUTES.has(parsedBreak)
+    ) {
+      return res.status(400);
+      json({ error: "Seleziona un tempo pausa valido." });
     }
     // ore numerico
-    const numOre = Number(ore);
-    if (!Number.isFinite(numOre)) {
-      return res.status(400).json({ error: "Ore deve essere un numero." });
+    const workedMinutes = endMinutes - startMinutes - parsedBreak;
+    if (workedMinutes <= 0) {
+      return res
+        .status(400)
+        .json({ error: "La durata del lavoro deve essere positiva." });
+    }
+
+    const ore = Number((workedMinutes / 60).toFixed(2));
+
+    const now = new Date();
+    const dataDmy = formatDateToDmy(now);
+    const workDateIso = formatDateToIso(now);
+    if (!dataDmy || !workDateIso) {
+      return res
+        .status(500)
+        .json({ error: "Impossibile determinare la data corrente." });
     }
 
     const entry = await createEntryInDb(
@@ -828,10 +928,14 @@ app.post("/api/entry", async (req, res) => {
         cantiere,
         macchina,
         linea,
-        ore: numOre,
-        data,
+        ore,
+        dataDmy,
+        workDateIso,
         descrizione,
         location: locationFromBody,
+        startTime,
+        endTime,
+        breakMinutes: parsedBreak,
       },
       req
     );
@@ -899,6 +1003,9 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
     "Cantiere",
     "Macchina",
     "Linea",
+    "Ora inizio",
+    "Ora fine",
+    "Pausa (min)",
     "Ore",
     "Data",
     "Descrizione",
@@ -913,6 +1020,9 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       e.cantiere ?? "",
       e.macchina ?? "",
       e.linea ?? "",
+      e.start_time ?? "",
+      e.end_time ?? "",
+      e.break_minutes ?? "",
       (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       e.data ?? "",
       (e.descrizione ?? "").replace(/\r?\n/g, " "),
@@ -941,6 +1051,9 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "Cantiere", key: "cantiere", width: 24 },
     { header: "Macchina", key: "macchina", width: 18 },
     { header: "Linea", key: "linea", width: 14 },
+    { header: "Ora inizio", key: "start_time", width: 12 },
+    { header: "Ora fine", key: "end_time", width: 12 },
+    { header: "Pausa (min)", key: "break_minutes", width: 12 },
     { header: "Ore", key: "ore", width: 10 },
     { header: "Data", key: "data", width: 14 },
     { header: "Località", key: "location", width: 26 },
@@ -954,6 +1067,9 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       cantiere: e.cantiere ?? "",
       macchina: e.macchina ?? "",
       linea: e.linea ?? "",
+      start_time: e.start_time ?? e.startTime ?? "",
+      end_time: e.end_time ?? e.endTime ?? "",
+      break_minutes: e.break_minutes ?? e.breakMinutes ?? "",
       ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       data: e.data ?? "",
       location: e.location ?? "",
