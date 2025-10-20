@@ -94,10 +94,25 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
     $response = curl.exe -s -X POST http://localhost:3000/api/login
     -H "Content-Type: application/json" `
     -d '{"user":"admin","pass":"GTSTrack"}'
-   $token = ($response | ConvertFrom-Json).token
+    $json = $response | ConvertFrom-Json
+   $token = $json.token
+   $json
    ```
 
-   L'opzione `-s` disattiva la progress bar di `curl.exe` (che altrimenti invaliderebbe il JSON ricevuto) e consente a `ConvertFrom-Json` di funzionare correttamente. In PowerShell il carattere di continuazione è il backtick `` ` `` (non `^`, valido solo in `cmd.exe`).
+   L'opzione `-s` disattiva la progress bar di `curl.exe` (che altrimenti invaliderebbe il JSON ricevuto) e consente a `ConvertFrom-Json` di funzionare correttamente. In PowerShell il carattere di continuazione è il backtick `` ` `` (non `^`, valido solo in `cmd.exe`). Assicurati che il backtick sia l'ultimissimo carattere sulla riga (nessuno spazio dopo `` ` ``); in caso contrario la riga successiva verrebbe interpretata come un nuovo comando e produrrebbe errori come `-H : Termine '-H' non riconosciuto...`.
+
+   Se preferisci evitare le continuazioni di riga, puoi eseguire lo stesso comando tutto su una riga:
+
+   ```powershell
+   $response = curl.exe -s -X POST http://localhost:3000/api/login -H "Content-Type: application/json" -d '{"user":"admin","pass":"GTSTrack"}'
+   $json = $response | ConvertFrom-Json
+   $token = $json.token
+   $json
+   ```
+
+   L'endpoint risponde con un oggetto del tipo `{"token":"<32 caratteri esadecimali>"}`. Se non vedi alcun output, esegui
+   manualmente `Write-Output $json` o semplicemente `$json` per stampare la risposta JSON e verificare che il token sia stato
+   creato correttamente.
 
 4. **Interroga `/api/entries/search` usando il token ottenuto**:
 
@@ -110,7 +125,7 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
 
    Sostituisci sempre il segnaposto con il token reale; in caso contrario l'API risponde `{"error":"Unauthorized"}`.
 
-5. **Interrompi il server** tornando alla finestra con `npm start` e premendo `Ctrl+C`.
+5. **Interrompi il server** tornando alla finestra con `npm start` e premendo `Ctrl+C`. Se, rilanciando il comando, ottieni l'errore `EADDRINUSE`, significa che un'altra istanza è ancora attiva: individua il processo con `Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProcess` e termina l'ID corrispondente con `Stop-Process -Id <PID>`.
 
 ## Nuovi file utili
 
