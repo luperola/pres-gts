@@ -6,7 +6,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "import:json": "node scripts/import-from-json.js"
+    "import:json": "node scripts/import-from-json.js",
+    "test": "node test-db.js"
   },
   "dependencies": {
     "body-parser": "^1.20.3",

@@ -68,19 +68,49 @@ Su Heroku basta effettuare il deploy (`git push heroku main`) dopo aver aggiorna
 - `/api/options`: lettura/scrittura categorie su tabella `option_categories`.
 - `/api/register`, `/api/login-user`: utenti persistiti nella tabella `users`.
 
-C:\Users\luigi\OneDrive\Documenti\1 Tests\Codici che funzionano\Test web Pubblicato> curl
+### 7. Appendix: comandi PowerShell passo-passo (Windows)
 
-Cmdlet Invoke-WebRequest nella posizione 1 della pipeline dei comandi
-Specificare i valori per i seguenti parametri:
-Uri: http://localhost:3000/api/entry
-curl : Impossibile effettuare la connessione al server remoto.
-In riga:1 car:1
+Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'alias `curl` → `Invoke-WebRequest`). Sequenza completa:
 
-- curl
-- ```
-    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebException
-    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
-  ```
+1. **Verifica la connessione al database** (facoltativo):
+
+   ```powershell
+   npm test
+   ```
+
+   Lo script esegue `node test-db.js` e mostra `✅ Connessione al database riuscita!` se `DATABASE_URL` è valido.
+
+2. **Avvia il server** nella prima finestra PowerShell:
+
+   ```powershell
+   npm start
+   ```
+
+   L'app ascolta sulla porta indicata da `PORT` (default `3000`).
+
+3. **Ottieni un token admin** da una seconda finestra PowerShell:
+
+   ```powershell
+   $response = curl.exe -X POST http://localhost:3000/api/login `
+     -H "Content-Type: application/json" `
+     -d '{"user":"admin","pass":"GTSTrack"}'
+   $token = ($response.Content | ConvertFrom-Json).token
+   ```
+
+   In PowerShell il carattere di continuazione è il backtick `` ` `` (non `^`, valido solo in `cmd.exe`).
+
+4. **Interroga `/api/entries/search` usando il token ottenuto**:
+
+   ```powershell
+   curl.exe -X POST http://localhost:3000/api/entries/search `
+     -H "Content-Type: application/json" `
+     -H "Authorization: Bearer $token" `
+     -d '{}'
+   ```
+
+   Sostituisci sempre il segnaposto con il token reale; in caso contrario l'API risponde `{"error":"Unauthorized"}`.
+
+5. **Interrompi il server** tornando alla finestra con `npm start` e premendo `Ctrl+C`.
 
 ## Nuovi file utili
 
