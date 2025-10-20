@@ -32,6 +32,60 @@ function tryParseLooseJson(raw) {
   }
 }
 
+function coerceBodyToObject(body, rawBody) {
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    return body;
+  }
+
+  const candidateString =
+    typeof body === "string" && body.trim()
+      ? body.trim()
+      : typeof rawBody === "string" && rawBody.trim()
+      ? rawBody.trim()
+      : "";
+
+  if (!candidateString) {
+    return {};
+  }
+  const recoveredJson = tryParseLooseJson(candidateString);
+  if (
+    recoveredJson &&
+    typeof recoveredJson === "object" &&
+    !Array.isArray(recoveredJson)
+  ) {
+    return recoveredJson;
+  }
+
+  if (candidateString.includes("=")) {
+    const params = new URLSearchParams(candidateString.replace(/^\?/, ""));
+    const formObject = {};
+    for (const [key, value] of params.entries()) {
+      formObject[key] = value;
+    }
+    if (Object.keys(formObject).length > 0) {
+      return formObject;
+    }
+  }
+
+  return {};
+}
+function extractCredentials(req) {
+  const normalizedBody = coerceBodyToObject(req.body, req.rawBody);
+  const user =
+    typeof normalizedBody.user === "string"
+      ? normalizedBody.user
+      : typeof normalizedBody.username === "string"
+      ? normalizedBody.username
+      : "";
+  const pass =
+    typeof normalizedBody.pass === "string"
+      ? normalizedBody.pass
+      : typeof normalizedBody.password === "string"
+      ? normalizedBody.password
+      : "";
+  return { user, pass };
+}
+
 const app = express();
 app.use(
   bodyParser.json({
@@ -563,10 +617,9 @@ async function userAuthMiddleware(req, res, next) {
   }
   return res.status(401).json({ error: "Utente non autenticato" });
 }
-
 // --- LOGIN ---
 app.post("/api/login", async (req, res) => {
-  const { user, pass } = req.body || {};
+  const { user, pass } = extractCredentials(req);
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
     const token = crypto.randomBytes(16).toString("hex");
     validTokens.add(token);
