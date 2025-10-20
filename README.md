@@ -68,6 +68,20 @@ Su Heroku basta effettuare il deploy (`git push heroku main`) dopo aver aggiorna
 - `/api/options`: lettura/scrittura categorie su tabella `option_categories`.
 - `/api/register`, `/api/login-user`: utenti persistiti nella tabella `users`.
 
+C:\Users\luigi\OneDrive\Documenti\1 Tests\Codici che funzionano\Test web Pubblicato> curl
+
+Cmdlet Invoke-WebRequest nella posizione 1 della pipeline dei comandi
+Specificare i valori per i seguenti parametri:
+Uri: http://localhost:3000/api/entry
+curl : Impossibile effettuare la connessione al server remoto.
+In riga:1 car:1
+
+- curl
+- ```
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
+  ```
+
 ## Nuovi file utili
 
 - `db.js`: connessione centralizzata a PostgreSQL (`pg.Pool`).
