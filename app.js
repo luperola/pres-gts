@@ -13,10 +13,51 @@ import { query } from "./db.js";
 
 dotenv.config();
 
-const app = express();
-app.use(bodyParser.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true }));
+function tryParseLooseJson(raw) {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  let candidate = trimmed;
+  if (trimmed.length > 1 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    candidate = trimmed.slice(1, -1);
+  }
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+}
 
+const app = express();
+app.use(
+  bodyParser.json({
+    limit: "5mb",
+    verify: (req, res, buf, encoding) => {
+      req.rawBody = buf.toString(encoding || "utf8");
+    },
+  })
+);
+app.use(express.urlencoded({ extended: true }));
+app.use((err, req, res, next) => {
+  if (
+    err instanceof SyntaxError &&
+    err.status === 400 &&
+    "body" in err &&
+    typeof req.rawBody === "string"
+  ) {
+    const recovered = tryParseLooseJson(req.rawBody);
+    if (recovered) {
+      req.body = recovered;
+      return next();
+    }
+    return res.status(400).json({ error: "JSON non valido" });
+  }
+  return next(err);
+});
 // __dirname in ESM (compatibile Windows)
 //const __filename = fileURLToPath(import.meta.url);
 const __filename = f2p(import.meta.url);
