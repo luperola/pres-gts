@@ -7,14 +7,11 @@ CREATE TABLE IF NOT EXISTS entries (
   ore NUMERIC(10,2) NOT NULL,
   data_dmy TEXT NOT NULL,
   work_date DATE NOT NULL,
-  setLocation(cachedLocation);
-      if (breakSelect) {
-        breakSelect.value = String(breakValue);
-      }
   descrizione TEXT,
   location TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
 ALTER TABLE entries
   ADD COLUMN IF NOT EXISTS start_time TEXT;
 
