@@ -91,13 +91,13 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
 3. **Ottieni un token admin** da una seconda finestra PowerShell:
 
    ```powershell
-   $response = curl.exe -X POST http://localhost:3000/api/login `
-     -H "Content-Type: application/json" `
-     -d '{"user":"admin","pass":"GTSTrack"}'
-   $token = ($response.Content | ConvertFrom-Json).token
+    $response = curl.exe -s -X POST http://localhost:3000/api/login
+    -H "Content-Type: application/json" `
+    -d '{"user":"admin","pass":"GTSTrack"}'
+   $token = ($response | ConvertFrom-Json).token
    ```
 
-   In PowerShell il carattere di continuazione è il backtick `` ` `` (non `^`, valido solo in `cmd.exe`).
+   L'opzione `-s` disattiva la progress bar di `curl.exe` (che altrimenti invaliderebbe il JSON ricevuto) e consente a `ConvertFrom-Json` di funzionare correttamente. In PowerShell il carattere di continuazione è il backtick `` ` `` (non `^`, valido solo in `cmd.exe`).
 
 4. **Interroga `/api/entries/search` usando il token ottenuto**:
 
