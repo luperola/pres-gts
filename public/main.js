@@ -320,7 +320,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         await fetch("/api/logout-user", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          //headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
         });
       } catch (err) {
