@@ -41,9 +41,26 @@ function parseTimeToMinutes(value) {
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
   return hours * 60 + minutes;
 }
-function formatMinutesToHours(minutes) {
-  if (!Number.isFinite(minutes)) return "0.00";
-  return (minutes / 60).toFixed(2);
+function formatMinutesToReadableTime(minutes) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes)));
+  if (!Number.isFinite(totalMinutes)) {
+    return "0 minuti";
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  const parts = [];
+  if (hours > 0) {
+    parts.push(`${hours} ${hours === 1 ? "ora" : "ore"}`);
+  }
+  if (remainingMinutes > 0) {
+    parts.push(
+      `${remainingMinutes} ${remainingMinutes === 1 ? "minuto" : "minuti"}`
+    );
+  }
+  if (!parts.length) {
+    return "0 minuti";
+  }
+  return parts.join(" e ");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -385,10 +402,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     const out = await res.json();
     if (res.ok) {
-      const oreWorked =
-        typeof out?.entry?.ore === "number"
-          ? out.entry.ore.toFixed(2)
-          : formatMinutesToHours(workedMinutes);
+      const oreValue = Number(out?.entry?.ore);
+      const oreWorked = Number.isFinite(oreValue)
+        ? formatMinutesToReadableTime(Math.round(oreValue * 60))
+        : formatMinutesToReadableTime(workedMinutes);
       msg.innerHTML = `<div class="alert alert-success">Registrazione salvata. Ore lavorate: ${oreWorked}</div>`;
       form.reset();
       setLocation(cachedLocation);
