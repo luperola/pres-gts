@@ -121,6 +121,9 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
+const NOMINATIM_USER_AGENT =
+  process.env.NOMINATIM_USER_AGENT || "pres-gts/1.0 (admin@pres-gts.local)";
+let lastNominatimRequestAt = 0;
 
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -171,6 +174,149 @@ async function fetchWithTimeout(url, ms = 3000) {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractCoordsFromLocationString(raw) {
+  if (typeof raw !== "string") return null;
+  const match = raw.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+function formatNominatimResult(data) {
+  if (!data || typeof data !== "object") return null;
+  const address =
+    typeof data.address === "object" && data.address ? data.address : {};
+  const city =
+    address.city ||
+    address.town ||
+    address.village ||
+    address.hamlet ||
+    address.municipality ||
+    address.city_district ||
+    null;
+  const suburb =
+    address.suburb ||
+    address.neighbourhood ||
+    address.quarter ||
+    address.residential ||
+    address.city_block ||
+    null;
+  const road =
+    address.road ||
+    address.pedestrian ||
+    address.footway ||
+    address.cycleway ||
+    address.path ||
+    address.service ||
+    null;
+  const houseNumber = address.house_number || null;
+  const province = address.state || address.region || address.county || null;
+  const country = address.country || null;
+
+  const parts = [];
+  if (road) {
+    parts.push(houseNumber ? `${road} ${houseNumber}` : road);
+  } else if (suburb) {
+    parts.push(suburb);
+  }
+  if (suburb && !parts.includes(suburb)) {
+    parts.push(suburb);
+  }
+  if (city) {
+    parts.push(city);
+  }
+  if (province && province !== city) {
+    parts.push(province);
+  }
+  if (country) {
+    parts.push(country);
+  }
+
+  const formatted = parts
+    .map((segment) => (typeof segment === "string" ? segment.trim() : ""))
+    .filter((segment) => segment.length > 0)
+    .join(", ");
+
+  if (formatted) {
+    return formatted;
+  }
+
+  if (typeof data.display_name === "string" && data.display_name.trim()) {
+    const segments = data.display_name
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (segments.length) {
+      return segments.slice(0, 4).join(", ");
+    }
+  }
+
+  if (city && country) {
+    return `${city}, ${country}`;
+  }
+  if (city) {
+    return city;
+  }
+  if (country) {
+    return country;
+  }
+  return null;
+}
+
+async function reverseGeocodeCoordinates(lat, lon) {
+  const now = Date.now();
+  const elapsed = now - lastNominatimRequestAt;
+  if (elapsed < 1100) {
+    await wait(1100 - elapsed);
+  }
+
+  const url = new URL("https://nominatim.openstreetmap.org/reverse");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  url.searchParams.set("zoom", "16");
+  url.searchParams.set("addressdetails", "1");
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": NOMINATIM_USER_AGENT,
+        "Accept-Language": "it,en",
+      },
+    });
+    lastNominatimRequestAt = Date.now();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return formatNominatimResult(data);
+  } catch (err) {
+    console.warn("Reverse geocode fallito", err?.message || err);
+    return null;
+  }
+}
+
+async function humanizeLocation(rawLocation, cache = new Map()) {
+  const trimmed = typeof rawLocation === "string" ? rawLocation.trim() : "";
+  if (!trimmed) return "";
+  const coords = extractCoordsFromLocationString(trimmed);
+  if (!coords) return trimmed;
+  const key = `${coords.lat.toFixed(6)},${coords.lon.toFixed(6)}`;
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+  const label = await reverseGeocodeCoordinates(coords.lat, coords.lon);
+  const value = label || trimmed;
+  cache.set(key, value);
+  return value;
+}
 async function resolveLocationFromRequest(req) {
   const ip = extractClientIp(req);
   if (!ip) return null;
@@ -1061,7 +1207,9 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "ID", key: "id", width: 10 },
   ];
 
+  const geocodeCache = new Map();
   for (const e of rows) {
+    const resolvedLocation = await humanizeLocation(e.location, geocodeCache);
     ws.addRow({
       operator: e.operator ?? "",
       cantiere: e.cantiere ?? "",
@@ -1072,7 +1220,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       break_minutes: e.break_minutes ?? e.breakMinutes ?? "",
       ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       data: e.data ?? "",
-      location: e.location ?? "",
+      location: resolvedLocation,
       descrizione: e.descrizione ?? "",
       id: e.id ?? "",
     });
