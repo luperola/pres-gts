@@ -32,6 +32,29 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+function setExportLoading(isLoading) {
+  const btn = $("btnXlsx");
+  const spinner = $("spinnerXlsx");
+  const label = $("btnXlsxLabel");
+
+  if (btn) {
+    btn.disabled = isLoading;
+  }
+
+  if (spinner) {
+    spinner.classList.toggle("d-none", !isLoading);
+  }
+
+  if (label) {
+    if (!label.dataset.defaultText) {
+      label.dataset.defaultText = label.textContent || "Export Excel";
+    }
+    label.textContent = isLoading
+      ? "Preparazione..."
+      : label.dataset.defaultText;
+  }
+}
+
 // Pulisce i filtri ai valori vuoti
 function clearFilters() {
   const ids = [
@@ -193,21 +216,29 @@ async function exportCsv() {
 
 async function exportXlsx() {
   const entries = window.__lastEntries || [];
-  const res = await fetch("/api/export/xlsx", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + TOKEN,
-    },
-    body: JSON.stringify({ entries }),
-  });
-  if (!res.ok) {
-    const out = await safeJson(res);
-    $("loginMsg").textContent = out?.error || "Errore export Excel";
-    return;
+  setExportLoading(true);
+  try {
+    const res = await fetch("/api/export/xlsx", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + TOKEN,
+      },
+      body: JSON.stringify({ entries }),
+    });
+    if (!res.ok) {
+      const out = await safeJson(res);
+      $("loginMsg").textContent = out?.error || "Errore export Excel";
+      return;
+    }
+    const blob = await res.blob();
+    downloadBlob(blob, "report.xlsx");
+  } catch (error) {
+    console.error("Errore export Excel", error);
+    $("loginMsg").textContent = "Errore export Excel";
+  } finally {
+    setExportLoading(false);
   }
-  const blob = await res.blob();
-  downloadBlob(blob, "report.xlsx");
 }
 
 // JSON safe

@@ -92,9 +92,14 @@
               >
                 Export CSV
               </button>
-              <button id="btnXlsx" class="btn btn-success" type="button">
-                Export Excel
-              </button>
+             <button id="btnXlsx" class="btn btn-success d-inline-flex align-items-center gap-2" type="button">
+                <span
+                  id="spinnerXlsx"
+                  class="spinner-border spinner-border-sm d-none"
+                  role="status"
+                  aria-hidden="true"
+                ></span>
+                <span id="btnXlsxLabel">Export Excel</span>
               <button
                 id="btnDeleteFiltered"
                 class="btn btn-danger"
