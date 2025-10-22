@@ -690,12 +690,10 @@ async function searchEntriesInDb(filters = {}) {
     clauses.push(...buildTokenClauses("cantiere", filters.cantiere, params));
   }
   if (filters.macchina) {
-    params.push(String(filters.macchina));
-    clauses.push(`LOWER(macchina) = LOWER($${params.length})`);
+    clauses.push(...buildTokenClauses("macchina", filters.macchina, params));
   }
   if (filters.linea) {
-    params.push(String(filters.linea));
-    clauses.push(`LOWER(linea) = LOWER($${params.length})`);
+    clauses.push(...buildTokenClauses("linea", filters.linea, params));
   }
   if (filters.operator) {
     clauses.push(...buildTokenClauses("operator", filters.operator, params));

@@ -55,6 +55,14 @@ function setExportLoading(isLoading) {
   }
 }
 
+function debounce(fn, delay = 300) {
+  let timeoutId;
+  return function (...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
 // Pulisce i filtri ai valori vuoti
 function clearFilters() {
   const ids = [
@@ -105,6 +113,7 @@ function renderTable(entries) {
 // Esegue la ricerca con i filtri correnti
 async function search(ev) {
   if (ev) ev.preventDefault();
+  if (!TOKEN) return;
 
   const macchina = $("f-macchina")?.value || "";
   const linea = $("f-linea")?.value || "";
@@ -305,6 +314,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Filtri
   const filterForm = $("filterForm");
   if (filterForm) filterForm.addEventListener("submit", search);
+
+  const autoFilterIds = ["f-operator", "f-macchina", "f-linea", "f-cantiere"];
+  const debouncedSearch = debounce(() => {
+    search().catch(console.error);
+  }, 300);
+  autoFilterIds.forEach((id) => {
+    const input = $(id);
+    if (input) input.addEventListener("input", debouncedSearch);
+  });
 
   const btnReset = $("btnReset");
   if (btnReset)

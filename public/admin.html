@@ -51,8 +51,8 @@
           <h5 class="mb-3">Filtri Report</h5>
           <form id="filterForm" class="row g-3">
             <div class="col-md-3">
-              <label class="form-label">Cantiere</label>
-              <input id="f-cantiere" class="form-control" />
+              <label class="form-label">Operatore</label>
+              <input id="f-operator" class="form-control" />
             </div>
             <div class="col-md-3">
               <label class="form-label">Macchina</label>
@@ -63,8 +63,8 @@
               <input id="f-linea" class="form-control" />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Operatore</label>
-              <input id="f-operator" class="form-control" />
+              <label class="form-label">Cantiere</label>
+              <input id="f-cantiere" class="form-control" />
             </div>
             <div class="col-md-3">
               <label class="form-label">Descrizione contiene</label>
@@ -92,7 +92,11 @@
               >
                 Export CSV
               </button>
-             <button id="btnXlsx" class="btn btn-success d-inline-flex align-items-center gap-2" type="button">
+              <button
+                id="btnXlsx"
+                class="btn btn-success d-inline-flex align-items-center gap-2"
+                type="button"
+              >
                 <span
                   id="spinnerXlsx"
                   class="spinner-border spinner-border-sm d-none"
@@ -100,6 +104,7 @@
                   aria-hidden="true"
                 ></span>
                 <span id="btnXlsxLabel">Export Excel</span>
+              </button>
               <button
                 id="btnDeleteFiltered"
                 class="btn btn-danger"
