@@ -21,6 +21,12 @@ ALTER TABLE entries
 ALTER TABLE entries
   ADD COLUMN IF NOT EXISTS break_minutes INTEGER;
 
+ALTER TABLE entries
+  ADD COLUMN IF NOT EXISTS start_location TEXT;
+
+ALTER TABLE entries
+  ADD COLUMN IF NOT EXISTS end_location TEXT;
+
 CREATE TABLE IF NOT EXISTS option_categories (
   id SERIAL PRIMARY KEY,
   category TEXT NOT NULL,

@@ -63,7 +63,8 @@ Su Heroku basta effettuare il deploy (`git push heroku main`) dopo aver aggiorna
 
 ### 6. Verifiche suggerite
 
-- `/api/entry`: creazione di una nuova presenza (località opzionale, risoluzione automatica su IP pubblico).
+- `/api/entry/start` e `/api/entry/finish`: apertura e chiusura turno con registrazione geolocalizzata (fallback automatico da IP pubblico se necessario).
+- `/api/entry`: creazione diretta di una presenza completa (per compatibilità con l'interfaccia precedente).
 - `/api/entries/search`: filtri lato server con PostgreSQL.
 - `/api/options`: lettura/scrittura categorie su tabella `option_categories`.
 - `/api/register`, `/api/login-user`: utenti persistiti nella tabella `users`.

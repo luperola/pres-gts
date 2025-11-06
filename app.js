@@ -189,6 +189,13 @@ function extractCoordsFromLocationString(raw) {
   return { lat, lon };
 }
 
+function normalizeLocationString(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.slice(0, 160);
+}
+
 function formatNominatimResult(data) {
   if (!data || typeof data !== "object") return null;
   const address =
@@ -583,6 +590,8 @@ async function createEntryInDb(entry, req) {
     startTime = null,
     endTime = null,
     breakMinutes = null,
+    startLocation = null,
+    endLocation = null,
   } = entry;
 
   if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataDmy)) {
@@ -595,15 +604,22 @@ async function createEntryInDb(entry, req) {
     throw new Error("Formato data non valido (usa DD/MM/YYYY).");
   }
 
-  let normalizedLocation = "";
-  if (typeof locationFromBody === "string" && locationFromBody.trim()) {
-    normalizedLocation = locationFromBody.trim().slice(0, 120);
-  } else {
+  const preferredStartLocation = startLocation ?? locationFromBody ?? "";
+  const normalizedPreferredStart = normalizeLocationString(
+    preferredStartLocation
+  );
+
+  let normalizedLocation = normalizedPreferredStart;
+  if (!normalizedLocation) {
     const lookedUp = await resolveLocationFromRequest(req);
     if (lookedUp) {
-      normalizedLocation = lookedUp.slice(0, 120);
+      normalizedLocation = normalizeLocationString(lookedUp);
     }
   }
+
+  const normalizedStartLocation =
+    normalizedPreferredStart || normalizedLocation || "";
+  const normalizedEndLocation = normalizeLocationString(endLocation ?? "");
 
   const normalizedStart = normalizeTimeString(startTime);
   const normalizedEnd = normalizeTimeString(endTime);
@@ -635,9 +651,11 @@ async function createEntryInDb(entry, req) {
        location,
        start_time,
        end_time,
-       break_minutes
+       break_minutes,
+       start_location,
+       end_location
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING id,
                operator,
                cantiere,
@@ -646,10 +664,13 @@ async function createEntryInDb(entry, req) {
                ore::float AS ore,
                to_char(work_date, 'DD/MM/YYYY') AS data,
                descrizione,
-                location,
+               location,
                start_time,
                end_time,
-               break_minutes::int AS break_minutes`,
+               break_minutes::int AS break_minutes,
+               start_location,
+               end_location`,
+
     [
       typeof operator === "string" ? operator.trim() : operator,
       typeof cantiere === "string" ? cantiere.trim() : cantiere,
@@ -663,6 +684,8 @@ async function createEntryInDb(entry, req) {
       normalizedStart,
       normalizedEnd,
       normalizedBreak,
+      normalizedStartLocation || null,
+      normalizedEndLocation || null,
     ]
   );
   return rows[0];
@@ -727,16 +750,70 @@ async function searchEntriesInDb(filters = {}) {
             ore::float AS ore,
             to_char(work_date, 'DD/MM/YYYY') AS data,
             descrizione,
-             location,
+            location,
             start_time,
             end_time,
-            break_minutes::int AS break_minutes
+            break_minutes::int AS break_minutes,
+            start_location,
+            end_location
      FROM entries
      ${whereClause}
      ORDER BY work_date DESC, id DESC`,
     params
   );
   return rows;
+}
+
+async function fetchEntryById(id) {
+  const { rows } = await query(
+    `SELECT id,
+            operator,
+            cantiere,
+            macchina,
+            linea,
+            ore::float AS ore,
+            to_char(work_date, 'DD/MM/YYYY') AS data,
+            work_date,
+            descrizione,
+            location,
+            start_time,
+            end_time,
+            break_minutes::int AS break_minutes,
+            start_location,
+            end_location
+     FROM entries
+     WHERE id = $1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+async function findOpenEntryForOperator(operator) {
+  if (!operator) return null;
+  const { rows } = await query(
+    `SELECT id,
+            operator,
+            cantiere,
+            macchina,
+            linea,
+            ore::float AS ore,
+            to_char(work_date, 'DD/MM/YYYY') AS data,
+            work_date,
+            descrizione,
+            location,
+            start_time,
+            end_time,
+            break_minutes::int AS break_minutes,
+            start_location,
+            end_location
+     FROM entries
+     WHERE lower(operator) = lower($1)
+       AND end_time IS NULL
+     ORDER BY work_date DESC, id DESC
+     LIMIT 1`,
+    [operator]
+  );
+  return rows[0] || null;
 }
 
 async function deleteEntryById(id) {
@@ -1000,6 +1077,232 @@ app.get("/api/operators", async (req, res) => {
 });
 // --- CREA VOCE (chiamato da index.html) ---
 // --- CREA VOCE (chiamato da index.html) ---
+app.get("/api/entry/status", async (req, res) => {
+  const operator =
+    typeof req.query?.operator === "string" ? req.query.operator.trim() : "";
+  if (!operator) {
+    return res.status(400).json({ error: "Operatore non valido." });
+  }
+  try {
+    const entry = await findOpenEntryForOperator(operator);
+    res.json({ entry: entry || null });
+  } catch (err) {
+    console.error("Status entry error", err);
+    res.status(500).json({ error: "Impossibile recuperare lo stato." });
+  }
+});
+
+app.post("/api/entry/start", async (req, res) => {
+  try {
+    const {
+      operator: operatorRaw,
+      cantiere: cantiereRaw,
+      macchina: macchinaRaw,
+      linea: lineaRaw,
+      descrizione,
+      startTime,
+      location: locationFromBody,
+    } = req.body || {};
+
+    const operator = typeof operatorRaw === "string" ? operatorRaw.trim() : "";
+    const cantiere = typeof cantiereRaw === "string" ? cantiereRaw.trim() : "";
+    const macchina = typeof macchinaRaw === "string" ? macchinaRaw.trim() : "";
+    const linea = typeof lineaRaw === "string" ? lineaRaw.trim() : "";
+
+    if (!operator || !cantiere || !macchina || !linea) {
+      return res.status(400).json({
+        error: "Compila tutti i campi obbligatori prima di avviare il lavoro.",
+      });
+    }
+
+    const normalizedStart = normalizeTimeString(startTime);
+    if (!normalizedStart) {
+      return res
+        .status(400)
+        .json({ error: "Ora inizio non valida (usa HH:MM)." });
+    }
+
+    const existing = await findOpenEntryForOperator(operator);
+    if (existing) {
+      return res.status(409).json({
+        error: "Esiste già un turno aperto per questo operatore.",
+        entry: existing,
+      });
+    }
+
+    const now = new Date();
+    const dataDmy = formatDateToDmy(now);
+    const workDateIso = formatDateToIso(now);
+    if (!dataDmy || !workDateIso) {
+      return res
+        .status(500)
+        .json({ error: "Impossibile determinare la data corrente." });
+    }
+
+    const entry = await createEntryInDb(
+      {
+        operator,
+        cantiere,
+        macchina,
+        linea,
+        ore: 0,
+        dataDmy,
+        workDateIso,
+        descrizione,
+        location: locationFromBody,
+        startTime: normalizedStart,
+        endTime: null,
+        breakMinutes: null,
+        startLocation: locationFromBody,
+        endLocation: null,
+      },
+      req
+    );
+
+    res.json({ ok: true, entry });
+  } catch (err) {
+    const message =
+      err instanceof Error && err.message ? err.message : "Errore salvataggio.";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/entry/finish", async (req, res) => {
+  try {
+    const {
+      entryId: entryIdRaw,
+      endTime,
+      breakMinutes,
+      location: endLocationRaw,
+      descrizione,
+    } = req.body || {};
+
+    const entryId = Number(entryIdRaw);
+    if (!Number.isFinite(entryId) || entryId <= 0) {
+      return res.status(400).json({ error: "ID turno non valido." });
+    }
+
+    const entry = await fetchEntryById(entryId);
+    if (!entry) {
+      return res.status(404).json({ error: "Turno non trovato." });
+    }
+    if (entry.end_time) {
+      return res
+        .status(400)
+        .json({ error: "Questo turno è già stato chiuso." });
+    }
+    if (!entry.start_time) {
+      return res.status(400).json({
+        error: "Il turno non ha un orario di inizio valido.",
+      });
+    }
+
+    const normalizedEnd = normalizeTimeString(endTime);
+    if (!normalizedEnd) {
+      return res
+        .status(400)
+        .json({ error: "Ora fine non valida (usa HH:MM)." });
+    }
+
+    const startMinutes = parseTimeStringToMinutes(entry.start_time);
+    const endMinutes = parseTimeStringToMinutes(normalizedEnd);
+    if (startMinutes === null || endMinutes === null) {
+      return res
+        .status(400)
+        .json({ error: "Impossibile calcolare la durata del turno." });
+    }
+
+    const parsedBreak =
+      breakMinutes === undefined || breakMinutes === null
+        ? 0
+        : Number(breakMinutes);
+    if (
+      !Number.isFinite(parsedBreak) ||
+      !ALLOWED_BREAK_MINUTES.has(parsedBreak)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Seleziona un tempo pausa valido." });
+    }
+
+    if (endMinutes <= startMinutes) {
+      return res.status(400).json({
+        error: "L'ora di fine deve essere successiva all'inizio.",
+      });
+    }
+
+    const workedMinutes = endMinutes - startMinutes - parsedBreak;
+    if (workedMinutes <= 0) {
+      return res.status(400).json({
+        error: "La durata del lavoro deve essere positiva.",
+      });
+    }
+
+    const ore = Number((workedMinutes / 60).toFixed(2));
+
+    let normalizedEndLocation = normalizeLocationString(endLocationRaw ?? "");
+    if (!normalizedEndLocation) {
+      const fallback = await resolveLocationFromRequest(req);
+      if (fallback) {
+        normalizedEndLocation = normalizeLocationString(fallback);
+      }
+    }
+
+    const sanitizedDescrizione =
+      typeof descrizione === "string"
+        ? descrizione.trim()
+        : typeof entry.descrizione === "string"
+        ? entry.descrizione
+        : "";
+
+    const { rows } = await query(
+      `UPDATE entries
+       SET end_time = $2,
+           break_minutes = $3,
+           ore = $4,
+           descrizione = $5,
+           end_location = $6,
+           location = COALESCE(location, start_location, $6)
+       WHERE id = $1
+       RETURNING id,
+                 operator,
+                 cantiere,
+                 macchina,
+                 linea,
+                 ore::float AS ore,
+                 to_char(work_date, 'DD/MM/YYYY') AS data,
+                 descrizione,
+                 location,
+                 start_time,
+                 end_time,
+                 break_minutes::int AS break_minutes,
+                 start_location,
+                 end_location`,
+      [
+        entryId,
+        normalizedEnd,
+        parsedBreak,
+        ore,
+        sanitizedDescrizione,
+        normalizedEndLocation || null,
+      ]
+    );
+
+    const updated = rows[0];
+    if (!updated) {
+      return res
+        .status(500)
+        .json({ error: "Impossibile aggiornare il turno." });
+    }
+
+    res.json({ ok: true, entry: updated });
+  } catch (err) {
+    const message =
+      err instanceof Error && err.message ? err.message : "Errore salvataggio.";
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post("/api/entry", async (req, res) => {
   try {
     const {
@@ -1080,6 +1383,8 @@ app.post("/api/entry", async (req, res) => {
         startTime,
         endTime,
         breakMinutes: parsedBreak,
+        startLocation: locationFromBody,
+        endLocation: locationFromBody,
       },
       req
     );
@@ -1152,6 +1457,8 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
     "Pausa (min)",
     "Ore",
     "Data",
+    "Geo inizio",
+    "Geo fine",
     "Descrizione",
     "ID",
   ];
@@ -1169,6 +1476,8 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       e.break_minutes ?? "",
       (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       e.data ?? "",
+      e.start_location ?? e.location ?? "",
+      e.end_location ?? "",
       (e.descrizione ?? "").replace(/\r?\n/g, " "),
       e.id ?? "",
     ]
@@ -1200,14 +1509,22 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "Pausa (min)", key: "break_minutes", width: 12 },
     { header: "Ore", key: "ore", width: 10 },
     { header: "Data", key: "data", width: 14 },
-    { header: "Località", key: "location", width: 26 },
+    { header: "Geo inizio", key: "start_location", width: 26 },
+    { header: "Geo fine", key: "end_location", width: 26 },
     { header: "Descrizione", key: "descrizione", width: 40 },
     { header: "ID", key: "id", width: 10 },
   ];
 
   const geocodeCache = new Map();
   for (const e of rows) {
-    const resolvedLocation = await humanizeLocation(e.location, geocodeCache);
+    const resolvedStartLocation = await humanizeLocation(
+      e.start_location ?? e.location,
+      geocodeCache
+    );
+    const resolvedEndLocation = await humanizeLocation(
+      e.end_location,
+      geocodeCache
+    );
     ws.addRow({
       operator: e.operator ?? "",
       cantiere: e.cantiere ?? "",
@@ -1218,7 +1535,8 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       break_minutes: e.break_minutes ?? e.breakMinutes ?? "",
       ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
       data: e.data ?? "",
-      location: resolvedLocation,
+      start_location: resolvedStartLocation,
+      end_location: resolvedEndLocation,
       descrizione: e.descrizione ?? "",
       id: e.id ?? "",
     });

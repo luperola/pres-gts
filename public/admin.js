@@ -90,14 +90,29 @@ function renderTable(entries) {
 
   for (const e of entries) {
     const tr = document.createElement("tr");
+    const oreValue =
+      e.ore !== undefined && e.ore !== null ? Number(e.ore) : null;
+    const oreLabel =
+      oreValue !== null && !Number.isNaN(oreValue) ? oreValue.toFixed(2) : "";
+    const breakLabel =
+      e.break_minutes !== undefined && e.break_minutes !== null
+        ? e.break_minutes
+        : "";
+    const geoStart = e.start_location ?? e.location ?? "";
+    const geoEnd = e.end_location ?? "";
     tr.innerHTML = `
-      <td>${e.operator ?? ""}</td>
-      <td>${e.cantiere ?? ""}</td>
-      <td>${e.macchina ?? ""}</td>
-      <td>${e.linea ?? ""}</td>
-      <td>${Number(e.ore ?? 0).toFixed(2)}</td>
-      <td>${e.data ?? ""}</td>
-      <td>${e.descrizione ?? ""}</td>
+     <td class="text-nowrap">${e.operator ?? ""}</td>
+      <td class="text-nowrap">${e.cantiere ?? ""}</td>
+      <td class="text-nowrap">${e.macchina ?? ""}</td>
+      <td class="text-nowrap">${e.linea ?? ""}</td>
+      <td class="text-nowrap">${e.start_time ?? ""}</td>
+      <td class="text-nowrap">${e.end_time ?? ""}</td>
+      <td class="text-nowrap">${breakLabel}</td>
+      <td class="text-nowrap">${oreLabel}</td>
+      <td class="text-break small">${geoStart}</td>
+      <td class="text-break small">${geoEnd}</td>
+      <td class="text-nowrap">${e.data ?? ""}</td>
+      <td class="text-break">${e.descrizione ?? ""}</td>
       <td>
         <button class="btn btn-sm btn-outline-danger btn-del" data-id="${
           e.id
