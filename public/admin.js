@@ -98,8 +98,6 @@ function renderTable(entries) {
       e.break_minutes !== undefined && e.break_minutes !== null
         ? e.break_minutes
         : "";
-    const geoStart = e.start_location ?? e.location ?? "";
-    const geoEnd = e.end_location ?? "";
     tr.innerHTML = `
      <td class="text-nowrap">${e.operator ?? ""}</td>
       <td class="text-nowrap">${e.cantiere ?? ""}</td>
@@ -109,9 +107,7 @@ function renderTable(entries) {
       <td class="text-nowrap">${e.end_time ?? ""}</td>
       <td class="text-nowrap">${breakLabel}</td>
       <td class="text-nowrap">${oreLabel}</td>
-      <td class="text-break small">${geoStart}</td>
-      <td class="text-break small">${geoEnd}</td>
-      <td class="text-nowrap">${e.data ?? ""}</td>
+           <td class="text-nowrap">${e.data ?? ""}</td>
       <td class="text-break">${e.descrizione ?? ""}</td>
       <td>
         <button class="btn btn-sm btn-outline-danger btn-del" data-id="${

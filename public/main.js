@@ -1,3 +1,19 @@
+function selectPlaceholderOption(select) {
+  if (!select) return;
+  const placeholderOption = Array.from(select.options || []).find(
+    (opt) => opt?.dataset?.placeholder === "true"
+  );
+  if (placeholderOption) {
+    const wasDisabled = placeholderOption.disabled;
+    placeholderOption.disabled = false;
+    placeholderOption.selected = true;
+    select.value = placeholderOption.value;
+    placeholderOption.disabled = wasDisabled;
+  } else {
+    select.selectedIndex = select.options.length ? 0 : -1;
+  }
+}
+
 function populateSelect(select, values) {
   if (!select) return;
   select.innerHTML = "";
@@ -6,6 +22,7 @@ function populateSelect(select, values) {
   placeholder.textContent = "Seleziona";
   placeholder.disabled = true;
   placeholder.selected = true;
+  placeholder.dataset.placeholder = "true";
   select.appendChild(placeholder);
   for (const v of values) {
     const opt = document.createElement("option");
@@ -13,6 +30,7 @@ function populateSelect(select, values) {
     opt.textContent = v;
     select.appendChild(opt);
   }
+  selectPlaceholderOption(select);
 }
 async function loadOptions() {
   try {
@@ -363,6 +381,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const lineaSelect = document.getElementById("linea");
   const descrizioneInput = document.getElementById("descrizione");
 
+  function resetFormFields() {
+    selectPlaceholderOption(operatorSelect);
+    selectPlaceholderOption(cantiereSelect);
+    selectPlaceholderOption(macchinaSelect);
+    selectPlaceholderOption(lineaSelect);
+    selectPlaceholderOption(breakSelect);
+    if (descrizioneInput) {
+      descrizioneInput.value = "";
+    }
+  }
+
   let activeEntry = null;
   let statusTimeoutId = null;
   let pendingStartData = null;
@@ -400,7 +429,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!select) return;
     const normalized = typeof value === "string" ? value : "";
     if (!normalized) {
-      select.value = "";
+      selectPlaceholderOption(select);
       return;
     }
     const existing = Array.from(select.options).find(
@@ -493,22 +522,18 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!select) return;
       select.disabled = hasEntry;
       if (!hasEntry && !select.value) {
-        select.value = "";
+        selectPlaceholderOption(select);
       }
     });
 
     if (!hasEntry && breakSelect) {
-      if (breakSelect.options.length > 0) {
-        breakSelect.selectedIndex = 0;
-      } else {
-        breakSelect.value = "";
-      }
+      selectPlaceholderOption(breakSelect);
     }
 
     if (hasEntry && activeEntry.start_time) {
       const dateLabel = activeEntry.data ? ` del ${activeEntry.data}` : "";
       setStatusText(
-        `Turno avviato alle ${activeEntry.start_time}${dateLabel}.`,
+        `Turno avviato alle ${activeEntry.start_time}${dateLabel}. Selezionare la pausa prima di premere "Fine lavoro".`,
         { timeout: 0 }
       );
     } else if (!hasEntry) {
@@ -532,10 +557,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (breakSelect) {
       if (entry?.break_minutes !== undefined && entry.break_minutes !== null) {
         breakSelect.value = String(entry.break_minutes);
-      } else if (breakSelect.options.length > 0) {
-        breakSelect.selectedIndex = 0;
       } else {
-        breakSelect.value = "";
+        selectPlaceholderOption(breakSelect);
       }
     }
   }
@@ -803,7 +826,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `Fine lavoro registrata. Ore lavorate: ${oreWorked}`
           : "Fine lavoro registrata."
       );
-      form.reset();
+      resetFormFields();
       setLocation(cachedLocation);
       clearPendingFinish();
       pendingFinishData = null;
