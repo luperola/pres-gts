@@ -374,6 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const breakWrapper = document.getElementById("breakWrapper");
   const breakSelect = document.getElementById("pausa");
   const workStatusEl = document.getElementById("workStatus");
+  const pauseReminder = document.getElementById("pauseReminder");
   const activeEntryInput = document.getElementById("activeEntryId");
   const operatorSelect = document.getElementById("operator");
   const cantiereSelect = document.getElementById("cantiere");
@@ -511,6 +512,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (breakWrapper) {
       breakWrapper.classList.toggle("d-none", !hasEntry);
     }
+    if (pauseReminder) {
+      pauseReminder.classList.toggle("d-none", !hasEntry);
+    }
 
     const selects = [
       operatorSelect,
@@ -533,7 +537,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (hasEntry && activeEntry.start_time) {
       const dateLabel = activeEntry.data ? ` del ${activeEntry.data}` : "";
       setStatusText(
-        `Turno avviato alle ${activeEntry.start_time}${dateLabel}. Selezionare la pausa prima di premere "Fine lavoro".`,
+        `Turno avviato alle ${activeEntry.start_time}${dateLabel}.`,
         { timeout: 0 }
       );
     } else if (!hasEntry) {
