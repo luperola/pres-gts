@@ -349,11 +349,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const msg = document.getElementById("msg");
   const startBtn = document.getElementById("startWorkBtn");
   const endBtn = document.getElementById("endWorkBtn");
+  const startConfirmBtn = document.getElementById("startConfirmBtn");
+  const finishConfirmBtn = document.getElementById("finishConfirmBtn");
+  const startTimeDisplay = document.getElementById("startTimeDisplay");
+  const finishSummary = document.getElementById("finishSummary");
   const breakWrapper = document.getElementById("breakWrapper");
   const breakSelect = document.getElementById("pausa");
   const workStatusEl = document.getElementById("workStatus");
   const activeEntryInput = document.getElementById("activeEntryId");
-  const resetBtn = document.getElementById("resetBtn");
   const operatorSelect = document.getElementById("operator");
   const cantiereSelect = document.getElementById("cantiere");
   const macchinaSelect = document.getElementById("macchina");
@@ -362,6 +365,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let activeEntry = null;
   let statusTimeoutId = null;
+  let pendingStartData = null;
+  let pendingFinishData = null;
 
   function showAlert(type, text) {
     if (!msg) return;
@@ -408,6 +413,30 @@ document.addEventListener("DOMContentLoaded", () => {
     select.value = normalized;
   }
 
+  function clearPendingStart() {
+    pendingStartData = null;
+    if (startConfirmBtn) {
+      startConfirmBtn.classList.add("d-none");
+      startConfirmBtn.disabled = false;
+    }
+    if (startTimeDisplay) {
+      startTimeDisplay.textContent = "";
+      startTimeDisplay.classList.add("d-none");
+    }
+  }
+
+  function clearPendingFinish() {
+    pendingFinishData = null;
+    if (finishConfirmBtn) {
+      finishConfirmBtn.classList.add("d-none");
+      finishConfirmBtn.disabled = false;
+    }
+    if (finishSummary) {
+      finishSummary.textContent = "";
+      finishSummary.classList.add("d-none");
+    }
+  }
+
   function updateStartButtonState() {
     if (!startBtn) return;
     const values = [
@@ -420,12 +449,27 @@ document.addEventListener("DOMContentLoaded", () => {
     startBtn.disabled = !canStart || Boolean(activeEntry);
   }
 
+  function updateEndButtonState() {
+    if (!endBtn) return;
+    const hasEntry = Boolean(activeEntry);
+    const breakValue = breakSelect?.value ?? "";
+    const breakSelected =
+      typeof breakValue === "string" && breakValue.trim() !== "";
+    endBtn.disabled = !hasEntry || !breakSelected;
+  }
   function updateUiForEntry(entry) {
     activeEntry = entry && entry.id ? entry : null;
     if (activeEntryInput) {
       activeEntryInput.value = activeEntry ? String(activeEntry.id) : "";
     }
     const hasEntry = Boolean(activeEntry);
+
+    if (!hasEntry) {
+      clearPendingStart();
+      clearPendingFinish();
+    } else {
+      clearPendingStart();
+    }
 
     if (startBtn) {
       startBtn.classList.toggle("d-none", hasEntry);
@@ -437,9 +481,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (breakWrapper) {
       breakWrapper.classList.toggle("d-none", !hasEntry);
-    }
-    if (resetBtn) {
-      resetBtn.disabled = hasEntry;
     }
 
     const selects = [
@@ -457,7 +498,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (!hasEntry && breakSelect) {
-      breakSelect.value = "0";
+      if (breakSelect.options.length > 0) {
+        breakSelect.selectedIndex = 0;
+      } else {
+        breakSelect.value = "";
+      }
     }
 
     if (hasEntry && activeEntry.start_time) {
@@ -473,6 +518,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     updateStartButtonState();
+    updateEndButtonState();
   }
 
   function populateFormFromEntry(entry) {
@@ -486,8 +532,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (breakSelect) {
       if (entry?.break_minutes !== undefined && entry.break_minutes !== null) {
         breakSelect.value = String(entry.break_minutes);
+      } else if (breakSelect.options.length > 0) {
+        breakSelect.selectedIndex = 0;
       } else {
-        breakSelect.value = "0";
+        breakSelect.value = "";
       }
     }
   }
@@ -562,24 +610,55 @@ document.addEventListener("DOMContentLoaded", () => {
     if (activeEntry) {
       return;
     }
+    const startTime = getCurrentTimeString();
+
+    pendingStartData = {
+      startTime,
+    };
+
+    if (startTimeDisplay) {
+      startTimeDisplay.textContent = `Ora di inizio: ${startTime}`;
+      startTimeDisplay.classList.remove("d-none");
+    }
+    if (startConfirmBtn) {
+      startConfirmBtn.classList.remove("d-none");
+      startConfirmBtn.disabled = false;
+    }
+    setStatusText('Premi "Conferma" per registrare l\'inizio del lavoro.', {
+      timeout: 0,
+    });
+  }
+
+  async function handleStartConfirmClick() {
+    if (!form || !pendingStartData) {
+      return;
+    }
     const operatorValue = operatorSelect?.value.trim();
     const cantiereValue = cantiereSelect?.value.trim();
     const macchinaValue = macchinaSelect?.value.trim();
     const lineaValue = lineaSelect?.value.trim();
+    if (!operatorValue || !cantiereValue || !macchinaValue || !lineaValue) {
+      showAlert(
+        "danger",
+        "Compila tutti i campi prima di confermare l'inizio."
+      );
+      return;
+    }
     const descrizioneValue = descrizioneInput?.value.trim() ?? "";
-
+    const payloadBase = { ...pendingStartData };
     let locationValue = await resolveLocationForAction({ forcePrompt: false });
-
     const payload = {
       operator: operatorValue,
       cantiere: cantiereValue,
       macchina: macchinaValue,
       linea: lineaValue,
-      startTime: getCurrentTimeString(),
+      startTime: payloadBase.startTime,
       descrizione: descrizioneValue,
       location: locationValue,
     };
-    startBtn.disabled = true;
+    if (startConfirmBtn) {
+      startConfirmBtn.disabled = true;
+    }
     try {
       const res = await fetch("/api/entry/start", {
         method: "POST",
@@ -601,6 +680,8 @@ document.addEventListener("DOMContentLoaded", () => {
         await optionsLoadedPromise;
         populateFormFromEntry(entry);
       }
+      clearPendingStart();
+      pendingStartData = null;
       updateUiForEntry(entry);
       showAlert(
         "success",
@@ -615,32 +696,89 @@ document.addEventListener("DOMContentLoaded", () => {
         "Impossibile registrare l'inizio del lavoro. Controlla la connessione e riprova."
       );
     } finally {
+      if (startConfirmBtn) {
+        startConfirmBtn.disabled = false;
+      }
       updateStartButtonState();
     }
   }
-
   async function handleFinishClick() {
     if (!form || !activeEntry) {
       showAlert("warning", "Non ci sono turni aperti da chiudere.");
       return;
     }
     clearAlert();
-
-    const breakValueRaw = Number(breakSelect?.value ?? "0");
-    if (![0, 30, 60, 90].includes(breakValueRaw)) {
+    const breakValueRaw = breakSelect?.value ?? "";
+    if (typeof breakValueRaw !== "string" || !breakValueRaw.trim()) {
+      showAlert(
+        "danger",
+        "Seleziona la durata della pausa prima di proseguire."
+      );
+      return;
+    }
+    const breakMinutes = Number(breakValueRaw);
+    if (!Number.isFinite(breakMinutes)) {
       showAlert("danger", "Seleziona un valore di pausa valido.");
       return;
     }
 
     const descrizioneValue = descrizioneInput?.value.trim() ?? "";
+    const endTime = getCurrentTimeString();
+
+    let oreLavorateLabel = "";
+    const startMinutes = parseTimeToMinutes(activeEntry.start_time);
+    const endMinutes = parseTimeToMinutes(endTime);
+    if (startMinutes !== null && endMinutes !== null) {
+      let workedMinutes = endMinutes - startMinutes;
+      if (workedMinutes < 0) {
+        workedMinutes += 24 * 60;
+      }
+      workedMinutes = Math.max(0, workedMinutes - breakMinutes);
+      oreLavorateLabel = formatMinutesToReadableTime(workedMinutes);
+    }
+    const pausaLabel = formatMinutesToReadableTime(breakMinutes);
+    if (finishSummary) {
+      const parts = [];
+      if (oreLavorateLabel) {
+        parts.push(`Ore lavorate: ${oreLavorateLabel}`);
+      }
+      parts.push(`Pausa: ${pausaLabel}`);
+      finishSummary.textContent = parts.join(" • ");
+      finishSummary.classList.remove("d-none");
+    }
+    pendingFinishData = {
+      endTime,
+      breakMinutes,
+      descrizione: descrizioneValue,
+    };
+    if (finishConfirmBtn) {
+      finishConfirmBtn.classList.remove("d-none");
+      finishConfirmBtn.disabled = false;
+    }
+    setStatusText(
+      'Verifica i dati e premi "Conferma" per registrare la fine del lavoro.',
+      {
+        timeout: 0,
+      }
+    );
+  }
+  async function handleFinishConfirmClick() {
+    if (!form || !activeEntry || !pendingFinishData) {
+      return;
+    }
+    const payloadBase = { ...pendingFinishData };
+    const descrizioneValue =
+      descrizioneInput?.value.trim() ?? payloadBase.descrizione ?? "";
     let locationValue = await resolveLocationForAction({ forcePrompt: false });
 
-    endBtn.disabled = true;
+    if (finishConfirmBtn) {
+      finishConfirmBtn.disabled = true;
+    }
     try {
       const payload = {
         entryId: activeEntry.id,
-        endTime: getCurrentTimeString(),
-        breakMinutes: breakValueRaw,
+        endTime: payloadBase.endTime,
+        breakMinutes: payloadBase.breakMinutes,
         descrizione: descrizioneValue,
         location: locationValue,
       };
@@ -667,6 +805,8 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       form.reset();
       setLocation(cachedLocation);
+      clearPendingFinish();
+      pendingFinishData = null;
       updateUiForEntry(null);
       setStatusText(
         entry?.end_time
@@ -681,8 +821,11 @@ document.addEventListener("DOMContentLoaded", () => {
         "Impossibile registrare la fine del lavoro. Controlla la connessione e riprova."
       );
     } finally {
-      if (endBtn) endBtn.disabled = false;
+      if (finishConfirmBtn) {
+        finishConfirmBtn.disabled = false;
+      }
       updateStartButtonState();
+      updateEndButtonState();
     }
   }
 
@@ -701,6 +844,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  if (breakSelect) {
+    breakSelect.addEventListener("change", () => {
+      if (pendingFinishData) {
+        clearPendingFinish();
+      }
+      updateEndButtonState();
+    });
+  }
+
   if (startBtn) {
     startBtn.addEventListener("click", () => {
       handleStartClick().catch((err) => {
@@ -717,45 +869,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-      if (activeEntry) {
-        showAlert("warning", "Completa il turno prima di annullare i campi.");
-        return;
-      }
-      const previousValues = {
-        operator: operatorSelect?.value ?? "",
-        cantiere: cantiereSelect?.value ?? "",
-        macchina: macchinaSelect?.value ?? "",
-        linea: lineaSelect?.value ?? "",
-        descrizione: descrizioneInput?.value ?? "",
-        pausa: breakSelect?.value ?? "0",
-      };
-      if (form) {
-        form.reset();
-        setLocation(cachedLocation);
-      }
-      ensureSelectValue(operatorSelect, previousValues.operator);
-      ensureSelectValue(cantiereSelect, previousValues.cantiere);
-      ensureSelectValue(macchinaSelect, previousValues.macchina);
-      ensureSelectValue(lineaSelect, previousValues.linea);
-      if (descrizioneInput) {
-        descrizioneInput.value = previousValues.descrizione;
-      }
-      if (breakSelect) {
-        breakSelect.value = previousValues.pausa;
-      }
-      clearAlert();
-      setStatusText("Campi ripristinati ai valori precedenti.", {
-        timeout: 5000,
+  if (startConfirmBtn) {
+    startConfirmBtn.addEventListener("click", () => {
+      handleStartConfirmClick().catch((err) => {
+        console.error("Errore inatteso conferma start", err);
       });
-      updateStartButtonState();
+    });
+  }
+
+  if (finishConfirmBtn) {
+    finishConfirmBtn.addEventListener("click", () => {
+      handleFinishConfirmClick().catch((err) => {
+        console.error("Errore inatteso conferma fine", err);
+      });
     });
   }
 
   optionsLoadedPromise
     .then(() => {
       updateStartButtonState();
+      updateEndButtonState();
     })
     .catch((err) => {
       console.warn("Impossibile caricare le opzioni", err);

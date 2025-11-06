@@ -79,18 +79,41 @@
                   Inizio lavoro
                 </button>
                 <button
+                  id="startConfirmBtn"
+                  type="button"
+                  class="btn btn-primary px-4 d-none"
+                >
+                  Conferma
+                </button>
+                <span
+                  id="startTimeDisplay"
+                  class="badge text-bg-light d-none"
+                ></span>
+                <button
                   id="endWorkBtn"
                   type="button"
                   class="btn btn-primary px-4 d-none"
                 >
                   Fine lavoro
                 </button>
+                <button
+                  id="finishConfirmBtn"
+                  type="button"
+                  class="btn btn-info px-4 d-none"
+                >
+                  Conferma
+                </button>
+                <span
+                  id="finishSummary"
+                  class="badge text-bg-light d-none"
+                ></span>
                 <span id="workStatus" class="text-muted small"></span>
               </div>
             </div>
             <div class="col-md-3 d-none" id="breakWrapper">
               <label class="form-label">Ore pausa</label>
               <select id="pausa" class="form-select">
+                <option value="" selected disabled>Seleziona pausa</option>
                 <option value="0">Nessuna pausa</option>
                 <option value="30">30 minuti</option>
                 <option value="60">1 ora</option>
@@ -105,15 +128,6 @@
                 rows="3"
                 placeholder="(facoltativa)"
               ></textarea>
-            </div>
-            <div class="col-12">
-              <button
-                id="resetBtn"
-                class="btn btn-outline-secondary px-4"
-                type="button"
-              >
-                Annulla turno
-              </button>
             </div>
           </form>
           <div id="msg" class="mt-3"></div>
