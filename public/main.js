@@ -723,12 +723,32 @@ document.addEventListener("DOMContentLoaded", () => {
         showAlert("warning", "Completa il turno prima di annullare i campi.");
         return;
       }
+      const previousValues = {
+        operator: operatorSelect?.value ?? "",
+        cantiere: cantiereSelect?.value ?? "",
+        macchina: macchinaSelect?.value ?? "",
+        linea: lineaSelect?.value ?? "",
+        descrizione: descrizioneInput?.value ?? "",
+        pausa: breakSelect?.value ?? "0",
+      };
       if (form) {
         form.reset();
         setLocation(cachedLocation);
       }
+      ensureSelectValue(operatorSelect, previousValues.operator);
+      ensureSelectValue(cantiereSelect, previousValues.cantiere);
+      ensureSelectValue(macchinaSelect, previousValues.macchina);
+      ensureSelectValue(lineaSelect, previousValues.linea);
+      if (descrizioneInput) {
+        descrizioneInput.value = previousValues.descrizione;
+      }
+      if (breakSelect) {
+        breakSelect.value = previousValues.pausa;
+      }
       clearAlert();
-      setStatusText("Campi ripristinati.", { timeout: 5000 });
+      setStatusText("Campi ripristinati ai valori precedenti.", {
+        timeout: 5000,
+      });
       updateStartButtonState();
     });
   }
