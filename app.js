@@ -985,7 +985,7 @@ async function registerUserHandler(req, res) {
   const normalizedEmail = String(email || "")
     .trim()
     .toLowerCase();
-    const normalizedFirstName = normalizePersonName(firstName);
+  const normalizedFirstName = normalizePersonName(firstName);
   const normalizedLastName = normalizePersonName(lastName);
   if (
     !normalizedEmail ||
@@ -994,14 +994,13 @@ async function registerUserHandler(req, res) {
     !normalizedFirstName ||
     !normalizedLastName
   ) {
-  if (!normalizedEmail || !password || password.length < 6) {
     return res.status(400).json({ error: "Dati non validi" });
   }
 
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) {
     return res.status(409).json({ error: "Utente già registrato" });
-  }  
+  }
   await ensureOptionSeed();
   const options = await fetchOptions();
   const fullName = buildFullName(normalizedFirstName, normalizedLastName);
@@ -1017,7 +1016,7 @@ async function registerUserHandler(req, res) {
     id: crypto.randomUUID(),
     email: normalizedEmail,
     passwordHash: hashPassword(password),
-     firstName: normalizedFirstName,
+    firstName: normalizedFirstName,
     lastName: normalizedLastName,
     operatorName: matchedOperator,
   };
@@ -1050,7 +1049,6 @@ app.post("/api/logout-user", async (req, res) => {
   clearUserToken(res, token);
   res.json({ ok: true });
 });
-
 
 app.get("/api/user/profile", userAuthMiddleware, async (req, res) => {
   const userId = req.userInfo?.userId;
