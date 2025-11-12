@@ -42,11 +42,25 @@ document
   .addEventListener("submit", async (e) => {
     e.preventDefault();
     hideFeedback();
+    const firstName = document.getElementById("registerFirstName").value.trim();
+    const lastName = document.getElementById("registerLastName").value.trim();
     const email = document.getElementById("registerEmail").value.trim();
     const password = document.getElementById("registerPassword").value;
-    if (!email || !password) return;
+
+    if (!firstName || !lastName || !email || !password) {
+      showFeedback(
+        "Compila nome, cognome, email e password per completare la registrazione.",
+        "warning"
+      );
+      return;
+    }
     try {
-      await handleAuthSubmit("/api/register", { email, password });
+      await handleAuthSubmit("/api/register", {
+        firstName,
+        lastName,
+        email,
+        password,
+      });
       showFeedback(
         "Registrazione completata! Reindirizzamento in corso...",
         "success"

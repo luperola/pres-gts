@@ -38,5 +38,17 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+ first_name TEXT,
+  last_name TEXT,
+  operator_name TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS first_name TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS last_name TEXT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS operator_name TEXT;

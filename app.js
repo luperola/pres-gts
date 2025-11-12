@@ -367,6 +367,29 @@ function normalizeOptionValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizePersonName(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function buildFullName(firstName, lastName) {
+  const parts = [
+    normalizePersonName(firstName),
+    normalizePersonName(lastName),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+function findOperatorMatch(operators, fullName) {
+  if (!Array.isArray(operators) || !fullName) return null;
+  const normalizedTarget = fullName.toLowerCase();
+  return (
+    operators.find((name) => {
+      if (typeof name !== "string") return false;
+      return name.trim().toLowerCase() === normalizedTarget;
+    }) || null
+  );
+}
 function sortOptionValues(values) {
   return values.sort((a, b) =>
     a.localeCompare(b, "it", { sensitivity: "base", ignorePunctuation: true })
@@ -501,7 +524,7 @@ async function deleteOption(category, value) {
 
 async function findUserByEmail(email) {
   return query(
-    `SELECT id, email, password_hash
+    `SELECT id, email, password_hash, first_name, last_name, operator_name
      FROM users
      WHERE email = $1
      LIMIT 1`,
@@ -509,11 +532,28 @@ async function findUserByEmail(email) {
   ).then((res) => (res.rows.length ? res.rows[0] : null));
 }
 
-async function createUser({ id, email, passwordHash }) {
+async function findUserById(id) {
+  return query(
+    `SELECT id, email, first_name, last_name, operator_name
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  ).then((res) => (res.rows.length ? res.rows[0] : null));
+}
+
+async function createUser({
+  id,
+  email,
+  passwordHash,
+  firstName = null,
+  lastName = null,
+  operatorName = null,
+}) {
   await query(
-    `INSERT INTO users (id, email, password_hash)
-     VALUES ($1, $2, $3)`,
-    [id, email, passwordHash]
+    `INSERT INTO users (id, email, password_hash, first_name, last_name, operator_name)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, email, passwordHash, firstName, lastName, operatorName]
   );
 }
 
@@ -938,11 +978,22 @@ function verifyPassword(password, stored) {
   );
 }
 
-app.post("/api/register", async (req, res) => {
-  const { email, password } = req.body || {};
+app.post("/api/register", registerUserHandler);
+
+async function registerUserHandler(req, res) {
+  const { email, password, firstName, lastName } = req.body || {};
   const normalizedEmail = String(email || "")
     .trim()
     .toLowerCase();
+    const normalizedFirstName = normalizePersonName(firstName);
+  const normalizedLastName = normalizePersonName(lastName);
+  if (
+    !normalizedEmail ||
+    !password ||
+    password.length < 6 ||
+    !normalizedFirstName ||
+    !normalizedLastName
+  ) {
   if (!normalizedEmail || !password || password.length < 6) {
     return res.status(400).json({ error: "Dati non validi" });
   }
@@ -950,11 +1001,25 @@ app.post("/api/register", async (req, res) => {
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) {
     return res.status(409).json({ error: "Utente già registrato" });
+  }  
+  await ensureOptionSeed();
+  const options = await fetchOptions();
+  const fullName = buildFullName(normalizedFirstName, normalizedLastName);
+  const matchedOperator = findOperatorMatch(options.operators || [], fullName);
+  if (!matchedOperator) {
+    return res.status(400).json({
+      error:
+        "Non è stato possibile associare il tuo nome a un operatore. Verifica di aver inserito nome e cognome corretti o contatta l'amministratore.",
+    });
   }
+
   const newUser = {
     id: crypto.randomUUID(),
     email: normalizedEmail,
     passwordHash: hashPassword(password),
+     firstName: normalizedFirstName,
+    lastName: normalizedLastName,
+    operatorName: matchedOperator,
   };
   try {
     await createUser(newUser);
@@ -963,8 +1028,7 @@ app.post("/api/register", async (req, res) => {
   }
   issueUserToken(res, newUser.id);
   return res.json({ ok: true });
-});
-
+}
 app.post("/api/login-user", async (req, res) => {
   const { email, password } = req.body || {};
   const normalizedEmail = String(email || "")
@@ -985,6 +1049,31 @@ app.post("/api/logout-user", async (req, res) => {
   const token = getUserTokenFromReq(req);
   clearUserToken(res, token);
   res.json({ ok: true });
+});
+
+
+app.get("/api/user/profile", userAuthMiddleware, async (req, res) => {
+  const userId = req.userInfo?.userId;
+  if (!userId) {
+    return res.status(401).json({ error: "Utente non autenticato" });
+  }
+  try {
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "Utente non trovato" });
+    }
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name || "",
+        lastName: user.last_name || "",
+        operatorName: user.operator_name || "",
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Impossibile recuperare il profilo utente" });
+  }
 });
 
 // Rotta protetta per index
@@ -1347,8 +1436,9 @@ app.post("/api/entry", async (req, res) => {
       !Number.isFinite(parsedBreak) ||
       !ALLOWED_BREAK_MINUTES.has(parsedBreak)
     ) {
-      return res.status(400);
-      json({ error: "Seleziona un tempo pausa valido." });
+      return res
+        .status(400)
+        .json({ error: "Seleziona un tempo pausa valido." });
     }
     // ore numerico
     const workedMinutes = endMinutes - startMinutes - parsedBreak;

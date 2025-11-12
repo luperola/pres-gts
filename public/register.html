@@ -57,6 +57,36 @@
                   role="tabpanel"
                 >
                   <form id="registerForm" class="needs-validation" novalidate>
+                    <div class="row g-3">
+                      <div class="col-sm-6">
+                        <label for="registerFirstName" class="form-label"
+                          >Nome</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="registerFirstName"
+                          autocomplete="given-name"
+                          required
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label for="registerLastName" class="form-label"
+                          >Cognome</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="registerLastName"
+                          autocomplete="family-name"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div class="form-text mb-3">
+                      Inserisci nome e cognome esattamente come presenti
+                      nell'elenco operatori.
+                    </div>
                     <div class="mb-3">
                       <label for="registerEmail" class="form-label"
                         >Email</label

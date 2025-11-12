@@ -14,36 +14,98 @@ function selectPlaceholderOption(select) {
   }
 }
 
-function populateSelect(select, values) {
+function populateSelect(select, values, options = {}) {
   if (!select) return;
+  const { includePlaceholder = true, preselectValue = null } = options;
   select.innerHTML = "";
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Seleziona";
-  placeholder.disabled = true;
-  placeholder.selected = true;
-  placeholder.dataset.placeholder = "true";
-  select.appendChild(placeholder);
+  if (includePlaceholder) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Seleziona";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    placeholder.dataset.placeholder = "true";
+    select.appendChild(placeholder);
+  }
   for (const v of values) {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
     select.appendChild(opt);
   }
-  selectPlaceholderOption(select);
+  let hasSelected = false;
+  if (preselectValue) {
+    const normalized = preselectValue.trim().toLowerCase();
+    for (const option of Array.from(select.options)) {
+      if (option.dataset?.placeholder === "true") continue;
+      if (option.value.trim().toLowerCase() === normalized) {
+        option.selected = true;
+        hasSelected = true;
+        break;
+      }
+    }
+  }
+
+  if (!hasSelected) {
+    if (includePlaceholder) {
+      selectPlaceholderOption(select);
+    } else if (select.options.length > 0) {
+      select.options[0].selected = true;
+    }
+  }
 }
-async function loadOptions() {
+
+async function fetchUserProfile() {
+  try {
+    const res = await fetch("/api/user/profile", {
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (data && typeof data === "object" && data.user) {
+      return data.user;
+    }
+  } catch (err) {
+    console.warn("Impossibile recuperare il profilo utente", err);
+  }
+  return null;
+}
+
+async function loadOptions(assignedOperatorName = "") {
   try {
     const res = await fetch("/api/options");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
-    populateSelect(document.getElementById("operator"), data.operators || []);
+    let operators = data.operators || [];
+    const normalizedAssigned = assignedOperatorName.trim();
+    if (normalizedAssigned) {
+      const matchLower = normalizedAssigned.toLowerCase();
+      operators = operators.filter(
+        (name) =>
+          typeof name === "string" && name.trim().toLowerCase() === matchLower
+      );
+      if (!operators.length) {
+        operators = [normalizedAssigned];
+      }
+    }
+    populateSelect(document.getElementById("operator"), operators, {
+      includePlaceholder: !(normalizedAssigned && operators.length === 1),
+      preselectValue: normalizedAssigned || null,
+    });
     populateSelect(document.getElementById("cantiere"), data.cantieri || []);
     populateSelect(document.getElementById("macchina"), data.macchine || []);
     populateSelect(document.getElementById("linea"), data.linee || []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
-    populateSelect(document.getElementById("operator"), []);
+    const fallbackOperators = assignedOperatorName
+      ? [assignedOperatorName]
+      : [];
+    populateSelect(document.getElementById("operator"), fallbackOperators, {
+      includePlaceholder: !(
+        assignedOperatorName && fallbackOperators.length === 1
+      ),
+      preselectValue: assignedOperatorName || null,
+    });
     populateSelect(document.getElementById("cantiere"), []);
     populateSelect(document.getElementById("macchina"), []);
     populateSelect(document.getElementById("linea"), []);
@@ -332,7 +394,6 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     tryFetchLocation();
   }
-
   if (geoBannerButton) {
     geoBannerButton.addEventListener("click", () => {
       obtainBrowserLocation({ forcePrompt: true }).then((location) => {
@@ -342,10 +403,28 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-
   initGeolocation();
   fetchLocation();
-  const optionsLoadedPromise = loadOptions();
+  let currentUserProfile = null;
+
+  async function initializeOptions() {
+    const profile = await fetchUserProfile();
+    currentUserProfile = profile;
+    const assignedOperator =
+      profile && typeof profile.operatorName === "string"
+        ? profile.operatorName.trim()
+        : "";
+    await loadOptions(assignedOperator);
+    if (assignedOperator) {
+      const operatorSelect = document.getElementById("operator");
+      if (operatorSelect) {
+        operatorSelect.value = assignedOperator;
+        operatorSelect.dataset.assignedOperator = assignedOperator;
+      }
+    }
+  }
+
+  const optionsLoadedPromise = initializeOptions();
 
   const logoutBtn = document.getElementById("logoutBtn");
   if (logoutBtn) {
