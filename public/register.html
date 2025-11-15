@@ -59,18 +59,6 @@
                   <form id="registerForm" class="needs-validation" novalidate>
                     <div class="row g-3">
                       <div class="col-sm-6">
-                        <label for="registerFirstName" class="form-label"
-                          >Nome</label
-                        >
-                        <input
-                          type="text"
-                          class="form-control"
-                          id="registerFirstName"
-                          autocomplete="given-name"
-                          required
-                        />
-                      </div>
-                      <div class="col-sm-6">
                         <label for="registerLastName" class="form-label"
                           >Cognome</label
                         >
@@ -82,9 +70,21 @@
                           required
                         />
                       </div>
+                      <div class="col-sm-6">
+                        <label for="registerFirstName" class="form-label"
+                          >Nome</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="registerFirstName"
+                          autocomplete="given-name"
+                          required
+                        />
+                      </div>
                     </div>
                     <div class="form-text mb-3">
-                      Inserisci nome e cognome esattamente come presenti
+                      Inserisci cognome e nome esattamente come presenti
                       nell'elenco operatori.
                     </div>
                     <div class="mb-3">
@@ -111,18 +111,6 @@
                   <form id="loginForm" novalidate>
                     <div class="row g-3">
                       <div class="col-sm-6">
-                        <label for="loginFirstName" class="form-label"
-                          >Nome</label
-                        >
-                        <input
-                          type="text"
-                          class="form-control"
-                          id="loginFirstName"
-                          autocomplete="given-name"
-                          required
-                        />
-                      </div>
-                      <div class="col-sm-6">
                         <label for="loginLastName" class="form-label"
                           >Cognome</label
                         >
@@ -131,6 +119,18 @@
                           class="form-control"
                           id="loginLastName"
                           autocomplete="family-name"
+                          required
+                        />
+                      </div>
+                      <div class="col-sm-6">
+                        <label for="loginFirstName" class="form-label"
+                          >Nome</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="loginFirstName"
+                          autocomplete="given-name"
                           required
                         />
                       </div>
