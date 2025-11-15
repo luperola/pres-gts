@@ -1,1004 +1,1051 @@
-function selectPlaceholderOption(select) {
-  if (!select) return;
-  const placeholderOption = Array.from(select.options || []).find(
-    (opt) => opt?.dataset?.placeholder === "true"
-  );
-  if (placeholderOption) {
-    const wasDisabled = placeholderOption.disabled;
-    placeholderOption.disabled = false;
-    placeholderOption.selected = true;
-    select.value = placeholderOption.value;
-    placeholderOption.disabled = wasDisabled;
-  } else {
-    select.selectedIndex = select.options.length ? 0 : -1;
-  }
-}
+  (function () {
+    const dom = {};
+    const state = {
+      activeEntry: null,
+      pendingStart: null,
+      pendingFinish: null,
+      statusTimeoutId: null,
+      cachedLocation: "",
+      pendingLocationPromise: null,
+      optionsLoaded: Promise.resolve(),
+      currentProfile: null,
+    };
 
-function populateSelect(select, values, options = {}) {
-  if (!select) return;
-  const { includePlaceholder = true, preselectValue = null } = options;
-  select.innerHTML = "";
-  if (includePlaceholder) {
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = "Seleziona";
-    placeholder.disabled = true;
-    placeholder.selected = true;
-    placeholder.dataset.placeholder = "true";
-    select.appendChild(placeholder);
-  }
-  for (const v of values) {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
-    select.appendChild(opt);
-  }
-  let hasSelected = false;
-  if (preselectValue) {
-    const normalized = preselectValue.trim().toLowerCase();
-    for (const option of Array.from(select.options)) {
-      if (option.dataset?.placeholder === "true") continue;
-      if (option.value.trim().toLowerCase() === normalized) {
-        option.selected = true;
-        hasSelected = true;
-        break;
+    document.addEventListener("DOMContentLoaded", init);
+
+    function init() {
+      cacheDom();
+      attachEventListeners();
+      setupGeolocation();
+      state.optionsLoaded = loadInitialData();
+      updateStartButtonState();
+      updateEndButtonState();
+      updateUiForEntry(null);
+    }
+
+    function cacheDom() {
+      dom.form = document.getElementById("entryForm");
+      dom.msg = document.getElementById("msg");
+      dom.logoutBtn = document.getElementById("logoutBtn");
+      dom.geoInput = document.getElementById("geoLocation");
+      dom.geoBanner = document.getElementById("geoConsentBanner");
+      dom.geoBannerMessage = document.getElementById("geoConsentMessage");
+      dom.geoBannerStatus = document.getElementById("geoConsentStatus");
+      dom.geoBannerButton = document.getElementById("requestLocationBtn");
+      dom.operatorSelect = document.getElementById("operator");
+      dom.cantiereSelect = document.getElementById("cantiere");
+      dom.macchinaSelect = document.getElementById("macchina");
+      dom.lineaSelect = document.getElementById("linea");
+      dom.breakSelect = document.getElementById("pausa");
+      dom.breakWrapper = document.getElementById("breakWrapper");
+      dom.pauseReminder = document.getElementById("pauseReminder");
+      dom.startBtn = document.getElementById("startWorkBtn");
+      dom.startConfirmBtn = document.getElementById("startConfirmBtn");
+      dom.endBtn = document.getElementById("endWorkBtn");
+      dom.finishConfirmBtn = document.getElementById("finishConfirmBtn");
+      dom.startTimeDisplay = document.getElementById("startTimeDisplay");
+      dom.finishSummary = document.getElementById("finishSummary");
+      dom.workStatus = document.getElementById("workStatus");
+      dom.descrizioneInput = document.getElementById("descrizione");
+      dom.activeEntryInput = document.getElementById("activeEntryId");
+    }
+
+    function attachEventListeners() {
+      if (dom.logoutBtn) {
+        dom.logoutBtn.addEventListener("click", handleLogoutClick);
       }
-    }
-  }
 
-  if (!hasSelected) {
-    if (includePlaceholder) {
-      selectPlaceholderOption(select);
-    } else if (select.options.length > 0) {
-      select.options[0].selected = true;
-    }
-  }
-}
-
-async function fetchUserProfile() {
-  try {
-    const res = await fetch("/api/user/profile", {
-      credentials: "same-origin",
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    if (data && typeof data === "object" && data.user) {
-      return data.user;
-    }
-  } catch (err) {
-    console.warn("Impossibile recuperare il profilo utente", err);
-  }
-  return null;
-}
-
-async function loadOptions(assignedOperatorName = "") {
-  try {
-    const res = await fetch("/api/options");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    let operators = data.operators || [];
-    const normalizedAssigned = assignedOperatorName.trim();
-    if (normalizedAssigned) {
-      const matchLower = normalizedAssigned.toLowerCase();
-      operators = operators.filter(
-        (name) =>
-          typeof name === "string" && name.trim().toLowerCase() === matchLower
-      );
-      if (!operators.length) {
-        operators = [normalizedAssigned];
+      if (dom.operatorSelect) {
+        dom.operatorSelect.addEventListener("change", () => {
+          clearSelectValidity(dom.operatorSelect);
+          updateStartButtonState();
+          fetchStatusForOperatorValue(dom.operatorSelect.value);
+        });
       }
-    }
-    populateSelect(document.getElementById("operator"), operators, {
-      includePlaceholder: !(normalizedAssigned && operators.length === 1),
-      preselectValue: normalizedAssigned || null,
-    });
-    populateSelect(document.getElementById("cantiere"), data.cantieri || []);
-    populateSelect(document.getElementById("macchina"), data.macchine || []);
-    populateSelect(document.getElementById("linea"), data.linee || []);
-  } catch (err) {
-    console.error("Impossibile caricare le opzioni", err);
-    const fallbackOperators = assignedOperatorName
-      ? [assignedOperatorName]
-      : [];
-    populateSelect(document.getElementById("operator"), fallbackOperators, {
-      includePlaceholder: !(
-        assignedOperatorName && fallbackOperators.length === 1
-      ),
-      preselectValue: assignedOperatorName || null,
-    });
-    populateSelect(document.getElementById("cantiere"), []);
-    populateSelect(document.getElementById("macchina"), []);
-    populateSelect(document.getElementById("linea"), []);
-  }
-}
 
-function parseTimeToMinutes(value) {
-  if (typeof value !== "string") return null;
-  const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  return hours * 60 + minutes;
-}
-function formatMinutesToReadableTime(minutes) {
-  const totalMinutes = Math.max(0, Math.round(Number(minutes)));
-  if (!Number.isFinite(totalMinutes)) {
-    return "0 minuti";
-  }
-  const hours = Math.floor(totalMinutes / 60);
-  const remainingMinutes = totalMinutes % 60;
-  const parts = [];
-  if (hours > 0) {
-    parts.push(`${hours} ${hours === 1 ? "ora" : "ore"}`);
-  }
-  if (remainingMinutes > 0) {
-    parts.push(
-      `${remainingMinutes} ${remainingMinutes === 1 ? "minuto" : "minuti"}`
-    );
-  }
-  if (!parts.length) {
-    return "0 minuti";
-  }
-  return parts.join(" e ");
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const geoInput = document.getElementById("geoLocation");
-  const geoBanner = document.getElementById("geoConsentBanner");
-  const geoBannerMessage = document.getElementById("geoConsentMessage");
-  const geoBannerStatus = document.getElementById("geoConsentStatus");
-  const geoBannerButton = document.getElementById("requestLocationBtn");
-  let cachedLocation = "";
-  let pendingLocationPromise = null;
-
-  function setLocation(value) {
-    cachedLocation = typeof value === "string" ? value.trim() : "";
-    if (geoInput) {
-      geoInput.value = cachedLocation;
-    }
-  }
-  function updateGeoStatus(text = "") {
-    if (!geoBannerStatus) return;
-    if (text) {
-      geoBannerStatus.textContent = text;
-      geoBannerStatus.classList.remove("d-none");
-    } else {
-      geoBannerStatus.textContent = "";
-      geoBannerStatus.classList.add("d-none");
-    }
-  }
-
-  function showGeoBanner(message, { status = "", showButton = true } = {}) {
-    if (!geoBanner) return;
-    geoBanner.classList.remove("d-none");
-    if (geoBannerMessage && message) {
-      geoBannerMessage.textContent = message;
-    }
-    updateGeoStatus(status);
-    if (geoBannerButton) {
-      if (showButton) {
-        geoBannerButton.classList.remove("d-none");
-        geoBannerButton.disabled = false;
-      } else {
-        geoBannerButton.classList.add("d-none");
-      }
-    }
-  }
-
-  function hideGeoBanner() {
-    if (!geoBanner) return;
-    geoBanner.classList.add("d-none");
-    updateGeoStatus("");
-  }
-
-  async function fetchLocation() {
-    try {
-      const res = await fetch("/api/geolocation", {
-        method: "GET",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-
-      if (!cachedLocation && typeof data?.location === "string") {
-        setLocation(data.location);
-      }
-    } catch (err) {
-      console.warn("Impossibile ottenere la geolocalizzazione dal server", err);
-    }
-  }
-
-  async function requestBrowserLocation() {
-    if (!navigator?.geolocation) {
-      throw new Error("Geolocalizzazione non supportata");
-    }
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords || {};
-          const coords = [latitude, longitude]
-            .map((v) =>
-              typeof v === "number" && Number.isFinite(v) ? v.toFixed(6) : null
-            )
-            .filter((v) => v !== null);
-          if (!coords.length) {
-            reject(new Error("Coordinate non disponibili"));
-            return;
-          }
-          let label = coords.join(", ");
-          if (
-            typeof accuracy === "number" &&
-            Number.isFinite(accuracy) &&
-            accuracy > 0
-          ) {
-            label += ` (±${Math.round(accuracy)}m)`;
-          }
-          resolve(label);
-        },
-        (err) => {
-          reject(err);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
+      [dom.cantiereSelect, dom.macchinaSelect, dom.lineaSelect].forEach(
+        (select) => {
+          if (!select) return;
+          select.addEventListener("change", () => {
+            clearSelectValidity(select);
+            updateStartButtonState();
+          });
         }
       );
-    });
-  }
 
-  function describeGeoError(err) {
-    const defaultMessage = {
-      message:
-        "Non è stato possibile ottenere automaticamente la posizione dal browser.",
-      status:
-        "Verifica le impostazioni del dispositivo e prova di nuovo a concedere l'autorizzazione.",
-      showButton: true,
-    };
-    if (!err || typeof err !== "object") {
-      return defaultMessage;
-    }
-    if (err.code === 1 || err.PERMISSION_DENIED === err.code) {
-      return {
-        message: "La richiesta di geolocalizzazione è stata bloccata.",
-        status:
-          'Consenti l\'accesso alla posizione dalle impostazioni del browser e poi clicca su "Attiva geolocalizzazione".',
-        showButton: true,
-      };
-    }
-    if (err.code === 2 || err.POSITION_UNAVAILABLE === err.code) {
-      return {
-        message: "Il dispositivo non riesce a rilevare la posizione.",
-        status:
-          "Controlla che GPS o servizi di posizione siano attivi e riprova.",
-        showButton: true,
-      };
-    }
-    if (err.code === 3 || err.TIMEOUT === err.code) {
-      return {
-        message: "Il tentativo di ottenere la posizione è scaduto.",
-        status: "Assicurati di avere segnale sufficiente e riprova.",
-        showButton: true,
-      };
-    }
-    if (typeof err.message === "string" && /secure/i.test(err.message)) {
-      return {
-        message:
-          "Il browser richiede una connessione sicura (HTTPS) per la geolocalizzazione.",
-        status:
-          "Apri la pagina tramite HTTPS o da localhost, poi riprova a consentire l'accesso alla posizione.",
-        showButton: true,
-      };
-    }
-    return defaultMessage;
-  }
+      if (dom.breakSelect) {
+        dom.breakSelect.addEventListener("change", () => {
+          clearSelectValidity(dom.breakSelect);
+          if (state.pendingFinish) {
+            clearPendingFinish();
+          }
+          updateEndButtonState();
+        });
+      }
 
-  async function obtainBrowserLocation({ forcePrompt = false } = {}) {
-    if (!navigator?.geolocation) {
-      showGeoBanner("Questo dispositivo non supporta la geolocalizzazione.", {
-        status:
-          "I dati verranno salvati senza coordinate. Se possibile usa un dispositivo compatibile.",
-        showButton: false,
-      });
+      if (dom.startBtn) {
+        dom.startBtn.addEventListener("click", () => {
+          handleStartClick().catch((err) => {
+            console.error("Errore inatteso start", err);
+          });
+        });
+      }
+
+      if (dom.startConfirmBtn) {
+        dom.startConfirmBtn.addEventListener("click", () => {
+          handleStartConfirmClick().catch((err) => {
+            console.error("Errore inatteso conferma start", err);
+          });
+        });
+      }
+
+      if (dom.endBtn) {
+        dom.endBtn.addEventListener("click", () => {
+          handleFinishClick().catch((err) => {
+            console.error("Errore inatteso fine", err);
+          });
+        });
+      }
+
+      if (dom.finishConfirmBtn) {
+        dom.finishConfirmBtn.addEventListener("click", () => {
+          handleFinishConfirmClick().catch((err) => {
+            console.error("Errore inatteso conferma fine", err);
+          });
+        });
+      }
+    }
+
+    function setupGeolocation() {
+      if (!dom.geoInput) return;
+
+      if (dom.geoBannerButton) {
+        dom.geoBannerButton.addEventListener("click", () => {
+          obtainBrowserLocation({ forcePrompt: true }).then((location) => {
+            if (!location) {
+              fetchServerLocation();
+            }
+          });
+        });
+      }
+
+      initGeolocation();
+      fetchServerLocation();
+    }
+
+    function handleLogoutClick() {
+      fetch("/api/logout-user", {
+        method: "POST",
+        credentials: "same-origin",
+      })
+        .catch((err) => {
+          console.error("Errore durante il logout", err);
+        })
+        .finally(() => {
+          window.location.href = "/register.html";
+        });
+    }
+
+    function selectPlaceholderOption(select) {
+      if (!select) return;
+      const placeholder = Array.from(select.options || []).find(
+        (opt) => opt?.dataset?.placeholder === "true"
+      );
+      if (placeholder) {
+        const disabled = placeholder.disabled;
+        placeholder.disabled = false;
+        placeholder.selected = true;
+        select.value = placeholder.value;
+        placeholder.disabled = disabled;
+      } else if (select.options.length) {
+        select.selectedIndex = 0;
+      }
+    }
+
+    function toTitleCase(value) {
+      if (typeof value !== "string") return "";
+      return value
+        .toLocaleLowerCase("it-IT")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) =>
+          part
+            .charAt(0)
+            .toLocaleUpperCase("it-IT") + part.slice(1)
+        )
+        .join(" ");
+    }
+
+    function formatOperatorLabel(value) {
+      return toTitleCase(value);
+    }
+
+    function populateSelect(
+      select,
+      values,
+      { includePlaceholder = true, preselectValue = "", formatLabel = null } = {}
+    ) {
+      if (!select) return;
+      select.innerHTML = "";
+      if (includePlaceholder) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Seleziona";
+        option.disabled = true;
+        option.selected = true;
+        option.dataset.placeholder = "true";
+        select.appendChild(option);
+      }
+
+      const normalizedPreselect = typeof preselectValue === "string"
+        ? preselectValue.trim()
+        : "";
+      let hasSelection = false;
+
+      for (const value of values || []) {
+        if (typeof value !== "string" || !value.trim()) continue;
+        const opt = document.createElement("option");
+        opt.value = value.trim();
+        opt.textContent = formatLabel ? formatLabel(value) : value.trim();
+        if (
+          normalizedPreselect &&
+          opt.value.trim().toLocaleLowerCase("it-IT") ===
+            normalizedPreselect.toLocaleLowerCase("it-IT")
+        ) {
+          opt.selected = true;
+          hasSelection = true;
+        }
+        select.appendChild(opt);
+      }
+
+      if (!hasSelection) {
+        if (includePlaceholder) {
+          selectPlaceholderOption(select);
+        } else if (select.options.length) {
+          select.options[0].selected = true;
+        }
+      }
+    }
+
+    async function loadOptions(assignedOperatorName = "") {
+      try {
+        const res = await fetch("/api/options");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const normalizedAssigned = assignedOperatorName.trim();
+        let operators = Array.isArray(data.operators) ? data.operators : [];
+        if (normalizedAssigned) {
+          const target = normalizedAssigned.toLocaleLowerCase("it-IT");
+          operators = operators.filter((name) => {
+            if (typeof name !== "string") return false;
+            return name.trim().toLocaleLowerCase("it-IT") === target;
+          });
+          if (!operators.length) {
+            operators = [normalizedAssigned];
+          }
+        }
+        populateSelect(dom.operatorSelect, operators, {
+          includePlaceholder: !(normalizedAssigned && operators.length === 1),
+          preselectValue: normalizedAssigned || null,
+          formatLabel: formatOperatorLabel,
+        });
+        populateSelect(dom.cantiereSelect, data.cantieri || []);
+        populateSelect(dom.macchinaSelect, data.macchine || []);
+        populateSelect(dom.lineaSelect, data.linee || []);
+      } catch (err) {
+        console.error("Impossibile caricare le opzioni", err);
+        const fallbackOperators = assignedOperatorName ? [assignedOperatorName] : [];
+        populateSelect(dom.operatorSelect, fallbackOperators, {
+          includePlaceholder: !(
+            assignedOperatorName && fallbackOperators.length === 1
+          ),
+          preselectValue: assignedOperatorName || null,
+          formatLabel: formatOperatorLabel,
+        });
+        populateSelect(dom.cantiereSelect, []);
+        populateSelect(dom.macchinaSelect, []);
+        populateSelect(dom.lineaSelect, []);
+      }
+    }
+
+    async function fetchUserProfile() {
+      try {
+        const res = await fetch("/api/user/profile", { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && typeof data === "object" && data.user) {
+          return data.user;
+        }
+      } catch (err) {
+        console.warn("Impossibile recuperare il profilo utente", err);
+      }
       return null;
     }
-    if (cachedLocation && !forcePrompt) {
-      return cachedLocation;
+
+    async function loadInitialData() {
+      const profile = await fetchUserProfile();
+      state.currentProfile = profile;
+      const assigned =
+        profile && typeof profile.operatorName === "string"
+          ? profile.operatorName.trim()
+          : "";
+      await loadOptions(assigned);
+      if (assigned && dom.operatorSelect) {
+        dom.operatorSelect.value = assigned;
+        dom.operatorSelect.dataset.assignedOperator = assigned;
+        fetchStatusForOperatorValue(assigned);
+      }
     }
-    if (pendingLocationPromise) {
-      return pendingLocationPromise;
+
+    function clearAlert() {
+      if (dom.msg) {
+        dom.msg.innerHTML = "";
+      }
     }
-    if (geoBannerButton) {
-      geoBannerButton.disabled = true;
+
+    function showAlert(type, text) {
+      if (!dom.msg) return;
+      dom.msg.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
     }
-    showGeoBanner(
-      "Stiamo tentando di rilevare automaticamente la tua posizione...",
-      { status: "Attendi qualche secondo.", showButton: false }
-    );
-    pendingLocationPromise = requestBrowserLocation()
-      .then((location) => {
-        setLocation(location);
-        hideGeoBanner();
-        return location;
-      })
-      .catch((err) => {
-        const info = describeGeoError(err);
-        showGeoBanner(info.message, {
-          status: info.status,
-          showButton: info.showButton,
-        });
-        return null;
-      })
-      .finally(() => {
-        if (geoBannerButton) {
-          geoBannerButton.disabled = false;
+
+    function setStatusText(text, { timeout = 0 } = {}) {
+      if (state.statusTimeoutId) {
+        clearTimeout(state.statusTimeoutId);
+        state.statusTimeoutId = null;
+      }
+      if (dom.workStatus) {
+        dom.workStatus.textContent = text || "";
+        if (text && timeout > 0) {
+          state.statusTimeoutId = setTimeout(() => {
+            if (dom.workStatus.textContent === text) {
+              dom.workStatus.textContent = "";
+            }
+          }, timeout);
         }
-        pendingLocationPromise = null;
-      });
-    return pendingLocationPromise;
-  }
-
-  async function initGeolocation() {
-    const tryFetchLocation = () => {
-      obtainBrowserLocation().catch(() => {
-        // errore già gestito in obtainBrowserLocation
-      });
-    };
-
-    if (navigator?.permissions?.query) {
-      try {
-        const status = await navigator.permissions.query({
-          name: "geolocation",
-        });
-        const handleState = (state) => {
-          if (state === "granted") {
-            hideGeoBanner();
-            obtainBrowserLocation();
-          } else if (state === "prompt") {
-            showGeoBanner(
-              "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
-              {
-                status:
-                  'Quando compare la finestra del browser scegli "Consenti".',
-                showButton: true,
-              }
-            );
-            tryFetchLocation();
-          } else {
-            showGeoBanner(
-              "La geolocalizzazione è disabilitata per questo sito.",
-              {
-                status:
-                  'Sblocca l\'autorizzazione dalle impostazioni del browser e poi premi "Attiva geolocalizzazione".',
-                showButton: true,
-              }
-            );
-          }
-        };
-        handleState(status.state);
-        status.onchange = () => handleState(status.state);
-        return;
-      } catch (err) {
-        console.warn("Impossibile verificare lo stato dei permessi", err);
       }
     }
 
-    showGeoBanner(
-      "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
-      {
-        status: 'Quando compare la finestra del browser scegli "Consenti".',
-        showButton: true,
+    function resetFormFields() {
+      selectPlaceholderOption(dom.operatorSelect);
+      selectPlaceholderOption(dom.cantiereSelect);
+      selectPlaceholderOption(dom.macchinaSelect);
+      selectPlaceholderOption(dom.lineaSelect);
+      selectPlaceholderOption(dom.breakSelect);
+      if (dom.descrizioneInput) {
+        dom.descrizioneInput.value = "";
       }
-    );
-    tryFetchLocation();
-  }
-  if (geoBannerButton) {
-    geoBannerButton.addEventListener("click", () => {
-      obtainBrowserLocation({ forcePrompt: true }).then((location) => {
-        if (!location) {
-          fetchLocation();
+    }
+
+    function clearPendingStart() {
+      state.pendingStart = null;
+      if (dom.startConfirmBtn) {
+        dom.startConfirmBtn.classList.add("d-none");
+        dom.startConfirmBtn.disabled = false;
+      }
+      if (dom.startTimeDisplay) {
+        dom.startTimeDisplay.textContent = "";
+        dom.startTimeDisplay.classList.add("d-none");
+      }
+    }
+
+    function clearPendingFinish() {
+      state.pendingFinish = null;
+      if (dom.finishConfirmBtn) {
+        dom.finishConfirmBtn.classList.add("d-none");
+        dom.finishConfirmBtn.disabled = false;
+      }
+      if (dom.finishSummary) {
+        dom.finishSummary.textContent = "";
+        dom.finishSummary.classList.add("d-none");
+      }
+    }
+
+    function updateStartButtonState() {
+      if (!dom.startBtn) return;
+      const requiredValues = [
+        dom.operatorSelect?.value,
+        dom.cantiereSelect?.value,
+        dom.macchinaSelect?.value,
+        dom.lineaSelect?.value,
+      ];
+      const canStart = requiredValues.every(
+        (value) => typeof value === "string" && value.trim().length > 0
+      );
+      dom.startBtn.disabled = !canStart || Boolean(state.activeEntry);
+    }
+
+    function updateEndButtonState() {
+      if (!dom.endBtn) return;
+      const hasEntry = Boolean(state.activeEntry);
+      const pauseValue = dom.breakSelect?.value ?? "";
+      const pauseSelected = typeof pauseValue === "string" && pauseValue.trim() !== "";
+      dom.endBtn.disabled = !hasEntry || !pauseSelected;
+    }
+
+    function updateUiForEntry(entry) {
+      state.activeEntry = entry && entry.id ? entry : null;
+      if (dom.activeEntryInput) {
+        dom.activeEntryInput.value = state.activeEntry ? String(state.activeEntry.id) : "";
+      }
+
+      const hasEntry = Boolean(state.activeEntry);
+
+      if (!hasEntry) {
+        clearPendingStart();
+        clearPendingFinish();
+      } else {
+        clearPendingStart();
+      }
+
+      if (dom.startBtn) {
+        dom.startBtn.classList.toggle("d-none", hasEntry);
+        dom.startBtn.disabled = hasEntry;
+      }
+
+      if (dom.endBtn) {
+        dom.endBtn.classList.toggle("d-none", !hasEntry);
+        dom.endBtn.disabled = !hasEntry;
+      }
+
+      if (dom.breakWrapper) {
+        dom.breakWrapper.classList.toggle("d-none", !hasEntry);
+      }
+
+      if (dom.pauseReminder) {
+        dom.pauseReminder.classList.toggle("d-none", !hasEntry);
+      }
+
+      [dom.operatorSelect, dom.cantiereSelect, dom.macchinaSelect, dom.lineaSelect].forEach(
+        (select) => {
+          if (!select) return;
+          select.disabled = hasEntry;
+          if (!hasEntry && !select.value) {
+            selectPlaceholderOption(select);
+          }
         }
-      });
-    });
-  }
-  initGeolocation();
-  fetchLocation();
-  let currentUserProfile = null;
+      );
 
-  async function initializeOptions() {
-    const profile = await fetchUserProfile();
-    currentUserProfile = profile;
-    const assignedOperator =
-      profile && typeof profile.operatorName === "string"
-        ? profile.operatorName.trim()
-        : "";
-    await loadOptions(assignedOperator);
-    if (assignedOperator) {
-      const operatorSelect = document.getElementById("operator");
-      if (operatorSelect) {
-        operatorSelect.value = assignedOperator;
-        operatorSelect.dataset.assignedOperator = assignedOperator;
+      if (!hasEntry && dom.breakSelect) {
+        selectPlaceholderOption(dom.breakSelect);
       }
-    }
-  }
 
-  const optionsLoadedPromise = initializeOptions();
-
-  const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", async () => {
-      try {
-        await fetch("/api/logout-user", {
-          method: "POST",
-          credentials: "same-origin",
+      if (hasEntry && state.activeEntry.start_time) {
+        const dateLabel = state.activeEntry.data ? ` del ${state.activeEntry.data}` : "";
+        setStatusText(`Turno avviato alle ${state.activeEntry.start_time}${dateLabel}.`, {
+          timeout: 0,
         });
-      } catch (err) {
-        console.error("Errore durante il logout", err);
-      } finally {
-        window.location.href = "/register.html";
+      } else if (!hasEntry) {
+        setStatusText('Premi "Inizio lavoro" per registrare l\'orario.', {
+          timeout: 0,
+        });
       }
-    });
-  }
 
-  const form = document.getElementById("entryForm");
-  const msg = document.getElementById("msg");
-  const startBtn = document.getElementById("startWorkBtn");
-  const endBtn = document.getElementById("endWorkBtn");
-  const startConfirmBtn = document.getElementById("startConfirmBtn");
-  const finishConfirmBtn = document.getElementById("finishConfirmBtn");
-  const startTimeDisplay = document.getElementById("startTimeDisplay");
-  const finishSummary = document.getElementById("finishSummary");
-  const breakWrapper = document.getElementById("breakWrapper");
-  const breakSelect = document.getElementById("pausa");
-  const workStatusEl = document.getElementById("workStatus");
-  const pauseReminder = document.getElementById("pauseReminder");
-  const activeEntryInput = document.getElementById("activeEntryId");
-  const operatorSelect = document.getElementById("operator");
-  const cantiereSelect = document.getElementById("cantiere");
-  const macchinaSelect = document.getElementById("macchina");
-  const lineaSelect = document.getElementById("linea");
-  const descrizioneInput = document.getElementById("descrizione");
-
-  function resetFormFields() {
-    selectPlaceholderOption(operatorSelect);
-    selectPlaceholderOption(cantiereSelect);
-    selectPlaceholderOption(macchinaSelect);
-    selectPlaceholderOption(lineaSelect);
-    selectPlaceholderOption(breakSelect);
-    if (descrizioneInput) {
-      descrizioneInput.value = "";
-    }
-  }
-
-  let activeEntry = null;
-  let statusTimeoutId = null;
-  let pendingStartData = null;
-  let pendingFinishData = null;
-
-  function showAlert(type, text) {
-    if (!msg) return;
-    msg.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
-  }
-
-  function clearAlert() {
-    if (msg) {
-      msg.innerHTML = "";
-    }
-  }
-
-  function setStatusText(text, { timeout = 0 } = {}) {
-    if (statusTimeoutId) {
-      clearTimeout(statusTimeoutId);
-      statusTimeoutId = null;
-    }
-    if (workStatusEl) {
-      workStatusEl.textContent = text || "";
-      if (text && timeout > 0) {
-        statusTimeoutId = setTimeout(() => {
-          if (workStatusEl.textContent === text) {
-            workStatusEl.textContent = "";
-          }
-        }, timeout);
-      }
-    }
-  }
-
-  function ensureSelectValue(select, value) {
-    if (!select) return;
-    const normalized = typeof value === "string" ? value : "";
-    if (!normalized) {
-      selectPlaceholderOption(select);
-      return;
-    }
-    const existing = Array.from(select.options).find(
-      (opt) => opt.value === normalized
-    );
-    if (!existing) {
-      const opt = new Option(normalized, normalized, true, true);
-      select.appendChild(opt);
-    }
-    select.value = normalized;
-  }
-
-  function clearPendingStart() {
-    pendingStartData = null;
-    if (startConfirmBtn) {
-      startConfirmBtn.classList.add("d-none");
-      startConfirmBtn.disabled = false;
-    }
-    if (startTimeDisplay) {
-      startTimeDisplay.textContent = "";
-      startTimeDisplay.classList.add("d-none");
-    }
-  }
-
-  function clearPendingFinish() {
-    pendingFinishData = null;
-    if (finishConfirmBtn) {
-      finishConfirmBtn.classList.add("d-none");
-      finishConfirmBtn.disabled = false;
-    }
-    if (finishSummary) {
-      finishSummary.textContent = "";
-      finishSummary.classList.add("d-none");
-    }
-  }
-
-  function updateStartButtonState() {
-    if (!startBtn) return;
-    const values = [
-      operatorSelect?.value,
-      cantiereSelect?.value,
-      macchinaSelect?.value,
-      lineaSelect?.value,
-    ];
-    const canStart = values.every((v) => typeof v === "string" && v.trim());
-    startBtn.disabled = !canStart || Boolean(activeEntry);
-  }
-
-  function updateEndButtonState() {
-    if (!endBtn) return;
-    const hasEntry = Boolean(activeEntry);
-    const breakValue = breakSelect?.value ?? "";
-    const breakSelected =
-      typeof breakValue === "string" && breakValue.trim() !== "";
-    endBtn.disabled = !hasEntry || !breakSelected;
-  }
-  function updateUiForEntry(entry) {
-    activeEntry = entry && entry.id ? entry : null;
-    if (activeEntryInput) {
-      activeEntryInput.value = activeEntry ? String(activeEntry.id) : "";
-    }
-    const hasEntry = Boolean(activeEntry);
-
-    if (!hasEntry) {
-      clearPendingStart();
-      clearPendingFinish();
-    } else {
-      clearPendingStart();
+      updateStartButtonState();
+      updateEndButtonState();
     }
 
-    if (startBtn) {
-      startBtn.classList.toggle("d-none", hasEntry);
-      startBtn.disabled = hasEntry;
-    }
-    if (endBtn) {
-      endBtn.classList.toggle("d-none", !hasEntry);
-      endBtn.disabled = !hasEntry;
-    }
-    if (breakWrapper) {
-      breakWrapper.classList.toggle("d-none", !hasEntry);
-    }
-    if (pauseReminder) {
-      pauseReminder.classList.toggle("d-none", !hasEntry);
-    }
-
-    const selects = [
-      operatorSelect,
-      cantiereSelect,
-      macchinaSelect,
-      lineaSelect,
-    ];
-    selects.forEach((select) => {
+    function ensureOptionValue(select, value, { formatLabel = null } = {}) {
       if (!select) return;
-      select.disabled = hasEntry;
-      if (!hasEntry && !select.value) {
+      const normalized = typeof value === "string" ? value.trim() : "";
+      if (!normalized) {
         selectPlaceholderOption(select);
+        return;
       }
-    });
-
-    if (!hasEntry && breakSelect) {
-      selectPlaceholderOption(breakSelect);
+      const existing = Array.from(select.options || []).find(
+        (opt) => opt.value === normalized
+      );
+      if (!existing) {
+        const option = new Option(
+          formatLabel ? formatLabel(normalized) : normalized,
+          normalized,
+          true,
+          true
+        );
+        select.appendChild(option);
+      }
+      select.value = normalized;
     }
 
-    if (hasEntry && activeEntry.start_time) {
-      const dateLabel = activeEntry.data ? ` del ${activeEntry.data}` : "";
+    function populateFormFromEntry(entry) {
+      ensureOptionValue(dom.operatorSelect, entry?.operator ?? "", {
+        formatLabel: formatOperatorLabel,
+      });
+      ensureOptionValue(dom.cantiereSelect, entry?.cantiere ?? "");
+      ensureOptionValue(dom.macchinaSelect, entry?.macchina ?? "");
+      ensureOptionValue(dom.lineaSelect, entry?.linea ?? "");
+      if (dom.descrizioneInput) {
+        dom.descrizioneInput.value = entry?.descrizione ?? "";
+      }
+      if (dom.breakSelect) {
+        if (entry?.break_minutes !== undefined && entry.break_minutes !== null) {
+          dom.breakSelect.value = String(entry.break_minutes);
+        } else {
+          selectPlaceholderOption(dom.breakSelect);
+        }
+      }
+    }
+
+    async function fetchStatusForOperatorValue(value) {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (!trimmed) {
+        updateUiForEntry(null);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/entry/status?operator=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const entry = data?.entry ?? null;
+        if (entry) {
+          await state.optionsLoaded;
+          populateFormFromEntry(entry);
+        }
+        updateUiForEntry(entry);
+        clearAlert();
+      } catch (err) {
+        console.error("Impossibile recuperare lo stato turno", err);
+        showAlert("warning", "Impossibile verificare se esiste un turno aperto. Riprova.");
+        updateUiForEntry(null);
+      }
+    }
+
+    function getCurrentTimeString() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+
+    function parseTimeToMinutes(value) {
+      if (typeof value !== "string") return null;
+      const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return null;
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+      return hours * 60 + minutes;
+    }
+
+    function formatMinutesToReadableTime(minutes) {
+      const totalMinutes = Math.max(0, Math.round(Number(minutes)));
+      if (!Number.isFinite(totalMinutes)) {
+        return "0 minuti";
+      }
+      const hours = Math.floor(totalMinutes / 60);
+      const remainingMinutes = totalMinutes % 60;
+      const parts = [];
+      if (hours > 0) {
+        parts.push(`${hours} ${hours === 1 ? "ora" : "ore"}`);
+      }
+      if (remainingMinutes > 0) {
+        parts.push(
+          `${remainingMinutes} ${remainingMinutes === 1 ? "minuto" : "minuti"}`
+        );
+      }
+      if (!parts.length) {
+        return "0 minuti";
+      }
+      return parts.join(" e ");
+    }
+
+    async function handleStartClick() {
+      if (!dom.form || state.activeEntry) return;
+      clearAlert();
+      if (!validateRequiredSelects()) {
+        return;
+      }
+      const startTime = getCurrentTimeString();
+      state.pendingStart = { startTime };
+      if (dom.startTimeDisplay) {
+        dom.startTimeDisplay.textContent = `Ora di inizio: ${startTime}`;
+        dom.startTimeDisplay.classList.remove("d-none");
+      }
+      if (dom.startConfirmBtn) {
+        dom.startConfirmBtn.classList.remove("d-none");
+        dom.startConfirmBtn.disabled = false;
+      }
+      setStatusText('Premi "Conferma" per registrare l\'inizio del lavoro.', {
+        timeout: 0,
+      });
+    }
+
+    function validateRequiredSelects() {
+      const selects = [
+        dom.operatorSelect,
+        dom.cantiereSelect,
+        dom.macchinaSelect,
+        dom.lineaSelect,
+      ];
+      let valid = true;
+      selects.forEach((select) => {
+        if (!select) return;
+        const value = typeof select.value === "string" ? select.value.trim() : "";
+        if (!value) {
+          select.setCustomValidity("Devi compilare questo campo");
+          valid = false;
+        } else {
+          select.setCustomValidity("");
+        }
+      });
+      if (!valid && dom.form) {
+        dom.form.reportValidity();
+      }
+      return valid;
+    }
+
+    function clearSelectValidity(select) {
+      if (!select) return;
+      select.setCustomValidity("");
+    }
+
+    async function handleStartConfirmClick() {
+      if (!dom.form || !state.pendingStart) return;
+      const operatorValue = dom.operatorSelect?.value.trim();
+      const cantiereValue = dom.cantiereSelect?.value.trim();
+      const macchinaValue = dom.macchinaSelect?.value.trim();
+      const lineaValue = dom.lineaSelect?.value.trim();
+      if (!operatorValue || !cantiereValue || !macchinaValue || !lineaValue) {
+        showAlert("danger", "Compila tutti i campi prima di confermare l'inizio.");
+        return;
+      }
+      const descrizioneValue = dom.descrizioneInput?.value.trim() ?? "";
+      const payload = {
+        operator: operatorValue,
+        cantiere: cantiereValue,
+        macchina: macchinaValue,
+        linea: lineaValue,
+        startTime: state.pendingStart.startTime,
+        descrizione: descrizioneValue,
+      };
+      let locationValue = await resolveLocationForAction({ forcePrompt: false });
+      payload.location = locationValue;
+
+      if (dom.startConfirmBtn) {
+        dom.startConfirmBtn.disabled = true;
+      }
+
+      try {
+        const res = await fetch("/api/entry/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+          if (res.status === 409 && data?.entry) {
+            await state.optionsLoaded;
+            populateFormFromEntry(data.entry);
+            updateUiForEntry(data.entry);
+          }
+          showAlert("danger", data?.error || "Impossibile avviare il turno.");
+          return;
+        }
+        const entry = data?.entry || null;
+        if (entry) {
+          await state.optionsLoaded;
+          populateFormFromEntry(entry);
+        }
+        clearPendingStart();
+        state.pendingStart = null;
+        updateUiForEntry(entry);
+        showAlert(
+          "success",
+          entry?.start_time
+            ? `Inizio lavoro registrato alle ${entry.start_time}.`
+            : "Inizio lavoro registrato."
+        );
+      } catch (err) {
+        console.error("Errore durante l'avvio turno", err);
+        showAlert(
+          "danger",
+          "Impossibile registrare l'inizio del lavoro. Controlla la connessione e riprova."
+        );
+      } finally {
+        if (dom.startConfirmBtn) {
+          dom.startConfirmBtn.disabled = false;
+        }
+        updateStartButtonState();
+      }
+    }
+
+    async function handleFinishClick() {
+      if (!dom.form || !state.activeEntry) {
+        showAlert("warning", "Non ci sono turni aperti da chiudere.");
+        return;
+      }
+      clearAlert();
+      const breakValueRaw = dom.breakSelect?.value ?? "";
+      if (typeof breakValueRaw !== "string" || !breakValueRaw.trim()) {
+        showAlert("danger", "Seleziona la durata della pausa prima di proseguire.");
+        return;
+      }
+      const breakMinutes = Number(breakValueRaw);
+      if (!Number.isFinite(breakMinutes)) {
+        showAlert("danger", "Seleziona un valore di pausa valido.");
+        return;
+      }
+
+      const descrizioneValue = dom.descrizioneInput?.value.trim() ?? "";
+      const endTime = getCurrentTimeString();
+      const startMinutes = parseTimeToMinutes(state.activeEntry.start_time);
+      const endMinutes = parseTimeToMinutes(endTime);
+      let oreLavorateLabel = "";
+      if (startMinutes !== null && endMinutes !== null) {
+        let workedMinutes = endMinutes - startMinutes;
+        if (workedMinutes < 0) {
+          workedMinutes += 24 * 60;
+        }
+        workedMinutes = Math.max(0, workedMinutes - breakMinutes);
+        oreLavorateLabel = formatMinutesToReadableTime(workedMinutes);
+      }
+      const pausaLabel = formatMinutesToReadableTime(breakMinutes);
+      if (dom.finishSummary) {
+        const parts = [];
+        if (oreLavorateLabel) {
+          parts.push(`Ore lavorate: ${oreLavorateLabel}`);
+        }
+        parts.push(`Pausa: ${pausaLabel}`);
+        dom.finishSummary.textContent = parts.join(" • ");
+        dom.finishSummary.classList.remove("d-none");
+      }
+      state.pendingFinish = {
+        endTime,
+        breakMinutes,
+        descrizione: descrizioneValue,
+      };
+      if (dom.finishConfirmBtn) {
+        dom.finishConfirmBtn.classList.remove("d-none");
+        dom.finishConfirmBtn.disabled = false;
+      }
       setStatusText(
-        `Turno avviato alle ${activeEntry.start_time}${dateLabel}.`,
+        'Verifica i dati e premi "Conferma" per registrare la fine del lavoro.',
         { timeout: 0 }
       );
-    } else if (!hasEntry) {
-      setStatusText('Premi "Inizio lavoro" per registrare l\'orario.', {
-        timeout: 0,
-      });
     }
 
-    updateStartButtonState();
-    updateEndButtonState();
-  }
-
-  function populateFormFromEntry(entry) {
-    ensureSelectValue(operatorSelect, entry?.operator ?? "");
-    ensureSelectValue(cantiereSelect, entry?.cantiere ?? "");
-    ensureSelectValue(macchinaSelect, entry?.macchina ?? "");
-    ensureSelectValue(lineaSelect, entry?.linea ?? "");
-    if (descrizioneInput) {
-      descrizioneInput.value = entry?.descrizione ?? "";
-    }
-    if (breakSelect) {
-      if (entry?.break_minutes !== undefined && entry.break_minutes !== null) {
-        breakSelect.value = String(entry.break_minutes);
-      } else {
-        selectPlaceholderOption(breakSelect);
-      }
-    }
-  }
-
-  function getCurrentTimeString() {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
-  }
-
-  async function safeJson(res) {
-    try {
-      return await res.json();
-    } catch (err) {
-      return null;
-    }
-  }
-
-  async function fetchStatusForOperatorValue(value) {
-    const trimmed = typeof value === "string" ? value.trim() : "";
-    if (!trimmed) {
-      updateUiForEntry(null);
-      return;
-    }
-    try {
-      const res = await fetch(
-        `/api/entry/status?operator=${encodeURIComponent(trimmed)}`
-      );
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      const entry = data?.entry ?? null;
-      if (entry) {
-        await optionsLoadedPromise;
-        populateFormFromEntry(entry);
-      }
-      updateUiForEntry(entry);
-      clearAlert();
-    } catch (err) {
-      console.error("Impossibile recuperare lo stato turno", err);
-      showAlert(
-        "warning",
-        "Impossibile verificare se esiste un turno aperto. Riprova."
-      );
-      updateUiForEntry(null);
-    }
-  }
-
-  async function resolveLocationForAction({ forcePrompt = false } = {}) {
-    try {
-      const loc = await obtainBrowserLocation({ forcePrompt });
-      if (loc) {
-        setLocation(loc);
-        return loc;
-      }
-    } catch (err) {
-      // handled downstream
-    }
-    const fallback =
-      (geoInput?.value || cachedLocation || "").toString().trim() || null;
-    return fallback;
-  }
-  async function handleStartClick() {
-    if (!form) return;
-    clearAlert();
-    if (!form.checkValidity()) {
-      form.reportValidity();
-      return;
-    }
-    if (activeEntry) {
-      return;
-    }
-    const startTime = getCurrentTimeString();
-
-    pendingStartData = {
-      startTime,
-    };
-
-    if (startTimeDisplay) {
-      startTimeDisplay.textContent = `Ora di inizio: ${startTime}`;
-      startTimeDisplay.classList.remove("d-none");
-    }
-    if (startConfirmBtn) {
-      startConfirmBtn.classList.remove("d-none");
-      startConfirmBtn.disabled = false;
-    }
-    setStatusText('Premi "Conferma" per registrare l\'inizio del lavoro.', {
-      timeout: 0,
-    });
-  }
-
-  async function handleStartConfirmClick() {
-    if (!form || !pendingStartData) {
-      return;
-    }
-    const operatorValue = operatorSelect?.value.trim();
-    const cantiereValue = cantiereSelect?.value.trim();
-    const macchinaValue = macchinaSelect?.value.trim();
-    const lineaValue = lineaSelect?.value.trim();
-    if (!operatorValue || !cantiereValue || !macchinaValue || !lineaValue) {
-      showAlert(
-        "danger",
-        "Compila tutti i campi prima di confermare l'inizio."
-      );
-      return;
-    }
-    const descrizioneValue = descrizioneInput?.value.trim() ?? "";
-    const payloadBase = { ...pendingStartData };
-    let locationValue = await resolveLocationForAction({ forcePrompt: false });
-    const payload = {
-      operator: operatorValue,
-      cantiere: cantiereValue,
-      macchina: macchinaValue,
-      linea: lineaValue,
-      startTime: payloadBase.startTime,
-      descrizione: descrizioneValue,
-      location: locationValue,
-    };
-    if (startConfirmBtn) {
-      startConfirmBtn.disabled = true;
-    }
-    try {
-      const res = await fetch("/api/entry/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) {
-        if (res.status === 409 && data?.entry) {
-          await optionsLoadedPromise;
-          populateFormFromEntry(data.entry);
-          updateUiForEntry(data.entry);
-        }
-        showAlert("danger", data?.error || "Impossibile avviare il turno.");
+    async function handleFinishConfirmClick() {
+      if (!dom.form || !state.activeEntry || !state.pendingFinish) {
         return;
       }
-      const entry = data?.entry || null;
-      if (entry) {
-        await optionsLoadedPromise;
-        populateFormFromEntry(entry);
-      }
-      clearPendingStart();
-      pendingStartData = null;
-      updateUiForEntry(entry);
-      showAlert(
-        "success",
-        entry?.start_time
-          ? `Inizio lavoro registrato alle ${entry.start_time}.`
-          : "Inizio lavoro registrato."
-      );
-    } catch (err) {
-      console.error("Errore durante l'avvio turno", err);
-      showAlert(
-        "danger",
-        "Impossibile registrare l'inizio del lavoro. Controlla la connessione e riprova."
-      );
-    } finally {
-      if (startConfirmBtn) {
-        startConfirmBtn.disabled = false;
-      }
-      updateStartButtonState();
-    }
-  }
-  async function handleFinishClick() {
-    if (!form || !activeEntry) {
-      showAlert("warning", "Non ci sono turni aperti da chiudere.");
-      return;
-    }
-    clearAlert();
-    const breakValueRaw = breakSelect?.value ?? "";
-    if (typeof breakValueRaw !== "string" || !breakValueRaw.trim()) {
-      showAlert(
-        "danger",
-        "Seleziona la durata della pausa prima di proseguire."
-      );
-      return;
-    }
-    const breakMinutes = Number(breakValueRaw);
-    if (!Number.isFinite(breakMinutes)) {
-      showAlert("danger", "Seleziona un valore di pausa valido.");
-      return;
-    }
-
-    const descrizioneValue = descrizioneInput?.value.trim() ?? "";
-    const endTime = getCurrentTimeString();
-
-    let oreLavorateLabel = "";
-    const startMinutes = parseTimeToMinutes(activeEntry.start_time);
-    const endMinutes = parseTimeToMinutes(endTime);
-    if (startMinutes !== null && endMinutes !== null) {
-      let workedMinutes = endMinutes - startMinutes;
-      if (workedMinutes < 0) {
-        workedMinutes += 24 * 60;
-      }
-      workedMinutes = Math.max(0, workedMinutes - breakMinutes);
-      oreLavorateLabel = formatMinutesToReadableTime(workedMinutes);
-    }
-    const pausaLabel = formatMinutesToReadableTime(breakMinutes);
-    if (finishSummary) {
-      const parts = [];
-      if (oreLavorateLabel) {
-        parts.push(`Ore lavorate: ${oreLavorateLabel}`);
-      }
-      parts.push(`Pausa: ${pausaLabel}`);
-      finishSummary.textContent = parts.join(" • ");
-      finishSummary.classList.remove("d-none");
-    }
-    pendingFinishData = {
-      endTime,
-      breakMinutes,
-      descrizione: descrizioneValue,
-    };
-    if (finishConfirmBtn) {
-      finishConfirmBtn.classList.remove("d-none");
-      finishConfirmBtn.disabled = false;
-    }
-    setStatusText(
-      'Verifica i dati e premi "Conferma" per registrare la fine del lavoro.',
-      {
-        timeout: 0,
-      }
-    );
-  }
-  async function handleFinishConfirmClick() {
-    if (!form || !activeEntry || !pendingFinishData) {
-      return;
-    }
-    const payloadBase = { ...pendingFinishData };
-    const descrizioneValue =
-      descrizioneInput?.value.trim() ?? payloadBase.descrizione ?? "";
-    let locationValue = await resolveLocationForAction({ forcePrompt: false });
-
-    if (finishConfirmBtn) {
-      finishConfirmBtn.disabled = true;
-    }
-    try {
       const payload = {
-        entryId: activeEntry.id,
-        endTime: payloadBase.endTime,
-        breakMinutes: payloadBase.breakMinutes,
-        descrizione: descrizioneValue,
-        location: locationValue,
+        entryId: state.activeEntry.id,
+        endTime: state.pendingFinish.endTime,
+        breakMinutes: state.pendingFinish.breakMinutes,
+        descrizione: dom.descrizioneInput?.value.trim() ?? state.pendingFinish.descrizione ?? "",
       };
-      const res = await fetch("/api/entry/finish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) {
-        showAlert("danger", data?.error || "Impossibile chiudere il turno.");
-        return;
+      let locationValue = await resolveLocationForAction({ forcePrompt: false });
+      payload.location = locationValue;
+
+      if (dom.finishConfirmBtn) {
+        dom.finishConfirmBtn.disabled = true;
       }
-      const entry = data?.entry || null;
-      const oreValue = Number(entry?.ore);
-      const oreWorked = Number.isFinite(oreValue)
-        ? formatMinutesToReadableTime(Math.round(oreValue * 60))
-        : "";
-      showAlert(
-        "success",
-        oreWorked
-          ? `Fine lavoro registrata. Ore lavorate: ${oreWorked}`
-          : "Fine lavoro registrata."
-      );
-      resetFormFields();
-      setLocation(cachedLocation);
-      clearPendingFinish();
-      pendingFinishData = null;
-      updateUiForEntry(null);
-      setStatusText(
-        entry?.end_time
-          ? `Turno concluso alle ${entry.end_time}.`
-          : "Turno concluso.",
-        { timeout: 10000 }
-      );
-    } catch (err) {
-      console.error("Errore durante la chiusura turno", err);
-      showAlert(
-        "danger",
-        "Impossibile registrare la fine del lavoro. Controlla la connessione e riprova."
-      );
-    } finally {
-      if (finishConfirmBtn) {
-        finishConfirmBtn.disabled = false;
-      }
-      updateStartButtonState();
-      updateEndButtonState();
-    }
-  }
 
-  if (operatorSelect) {
-    operatorSelect.addEventListener("change", () => {
-      const value = operatorSelect.value;
-      fetchStatusForOperatorValue(value);
-      updateStartButtonState();
-    });
-  }
-
-  [cantiereSelect, macchinaSelect, lineaSelect].forEach((select) => {
-    if (!select) return;
-    select.addEventListener("change", () => {
-      updateStartButtonState();
-    });
-  });
-
-  if (breakSelect) {
-    breakSelect.addEventListener("change", () => {
-      if (pendingFinishData) {
+      try {
+        const res = await fetch("/api/entry/finish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+          showAlert("danger", data?.error || "Impossibile chiudere il turno.");
+          return;
+        }
+        const entry = data?.entry || null;
+        const oreValue = Number(entry?.ore);
+        const oreWorked = Number.isFinite(oreValue)
+          ? formatMinutesToReadableTime(Math.round(oreValue * 60))
+          : "";
+        showAlert(
+          "success",
+          oreWorked
+            ? `Fine lavoro registrata. Ore lavorate: ${oreWorked}`
+            : "Fine lavoro registrata."
+        );
+        resetFormFields();
+        setLocation(state.cachedLocation);
         clearPendingFinish();
+        state.pendingFinish = null;
+        updateUiForEntry(null);
+        setStatusText(
+          entry?.end_time
+            ? `Turno concluso alle ${entry.end_time}.`
+            : "Turno concluso.",
+          { timeout: 10000 }
+        );
+      } catch (err) {
+        console.error("Errore durante la chiusura turno", err);
+        showAlert(
+          "danger",
+          "Impossibile registrare la fine del lavoro. Controlla la connessione e riprova."
+        );
+      } finally {
+        if (dom.finishConfirmBtn) {
+          dom.finishConfirmBtn.disabled = false;
+        }
+        updateStartButtonState();
+        updateEndButtonState();
       }
-      updateEndButtonState();
-    });
-  }
+    }
 
-  if (startBtn) {
-    startBtn.addEventListener("click", () => {
-      handleStartClick().catch((err) => {
-        console.error("Errore inatteso start", err);
+    function setLocation(value) {
+      state.cachedLocation = typeof value === "string" ? value.trim() : "";
+      if (dom.geoInput) {
+        dom.geoInput.value = state.cachedLocation;
+      }
+    }
+
+    function updateGeoStatus(text = "") {
+      if (!dom.geoBannerStatus) return;
+      if (text) {
+        dom.geoBannerStatus.textContent = text;
+        dom.geoBannerStatus.classList.remove("d-none");
+      } else {
+        dom.geoBannerStatus.textContent = "";
+        dom.geoBannerStatus.classList.add("d-none");
+      }
+    }
+
+    function showGeoBanner(message, { status = "", showButton = true } = {}) {
+      if (!dom.geoBanner) return;
+      dom.geoBanner.classList.remove("d-none");
+      if (dom.geoBannerMessage && message) {
+        dom.geoBannerMessage.textContent = message;
+      }
+      updateGeoStatus(status);
+      if (dom.geoBannerButton) {
+        if (showButton) {
+          dom.geoBannerButton.classList.remove("d-none");
+          dom.geoBannerButton.disabled = false;
+        } else {
+          dom.geoBannerButton.classList.add("d-none");
+        }
+      }
+    }
+
+    function hideGeoBanner() {
+      if (!dom.geoBanner) return;
+      dom.geoBanner.classList.add("d-none");
+      updateGeoStatus("");
+    }
+
+    async function fetchServerLocation() {
+      try {
+        const res = await fetch("/api/geolocation", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!state.cachedLocation && typeof data?.location === "string") {
+          setLocation(data.location);
+        }
+      } catch (err) {
+        console.warn("Impossibile ottenere la geolocalizzazione dal server", err);
+      }
+    }
+
+    function requestBrowserLocation() {
+      if (!navigator?.geolocation) {
+        return Promise.reject(new Error("Geolocalizzazione non supportata"));
+      }
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, accuracy } = pos.coords || {};
+            const coords = [latitude, longitude]
+              .map((value) =>
+                typeof value === "number" && Number.isFinite(value)
+                  ? value.toFixed(6)
+                  : null
+              )
+              .filter((value) => value !== null);
+            if (!coords.length) {
+              reject(new Error("Coordinate non disponibili"));
+              return;
+            }
+            let label = coords.join(", ");
+            if (
+              typeof accuracy === "number" &&
+              Number.isFinite(accuracy) &&
+              accuracy > 0
+            ) {
+              label += ` (±${Math.round(accuracy)}m)`;
+            }
+            resolve(label);
+          },
+          (err) => {
+            reject(err);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          }
+        );
       });
-    });
-  }
+    }
 
-  if (endBtn) {
-    endBtn.addEventListener("click", () => {
-      handleFinishClick().catch((err) => {
-        console.error("Errore inatteso finish", err);
-      });
-    });
-  }
+    function describeGeoError(err) {
+      const defaultMessage = {
+        message: "Non è stato possibile ottenere automaticamente la posizione dal browser.",
+        status:
+          "Verifica le impostazioni del dispositivo e prova di nuovo a concedere l'autorizzazione.",
+        showButton: true,
+      };
+      if (!err || typeof err !== "object") {
+        return defaultMessage;
+      }
+      if (err.code === 1 || err.PERMISSION_DENIED === err.code) {
+        return {
+          message: "La richiesta di geolocalizzazione è stata bloccata.",
+          status:
+            'Consenti l\'accesso alla posizione dalle impostazioni del browser e poi clicca su "Attiva geolocalizzazione".',
+          showButton: true,
+        };
+      }
+      if (err.code === 2 || err.POSITION_UNAVAILABLE === err.code) {
+        return {
+          message: "Il dispositivo non riesce a rilevare la posizione.",
+          status: "Controlla che GPS o servizi di posizione siano attivi e riprova.",
+          showButton: true,
+        };
+      }
+      if (err.code === 3 || err.TIMEOUT === err.code) {
+        return {
+          message: "Il tentativo di ottenere la posizione è scaduto.",
+          status: "Assicurati di avere segnale sufficiente e riprova.",
+          showButton: true,
+        };
+      }
+      if (typeof err.message === "string" && /secure/i.test(err.message)) {
+        return {
+          message:
+            "Il browser richiede una connessione sicura (HTTPS) per la geolocalizzazione.",
+          status:
+            "Apri la pagina tramite HTTPS o da localhost, poi riprova a consentire l'accesso alla posizione.",
+          showButton: true,
+        };
+      }
+      return defaultMessage;
+    }
 
-  if (startConfirmBtn) {
-    startConfirmBtn.addEventListener("click", () => {
-      handleStartConfirmClick().catch((err) => {
-        console.error("Errore inatteso conferma start", err);
-      });
-    });
-  }
+    function obtainBrowserLocation({ forcePrompt = false } = {}) {
+      if (!navigator?.geolocation) {
+        showGeoBanner("Questo dispositivo non supporta la geolocalizzazione.", {
+          status:
+            "I dati verranno salvati senza coordinate. Se possibile usa un dispositivo compatibile.",
+          showButton: false,
+        });
+        return Promise.resolve(null);
+      }
+      if (state.cachedLocation && !forcePrompt) {
+        return Promise.resolve(state.cachedLocation);
+      }
+      if (state.pendingLocationPromise) {
+        return state.pendingLocationPromise;
+      }
+      if (dom.geoBannerButton) {
+        dom.geoBannerButton.disabled = true;
+      }
+      showGeoBanner(
+        "Stiamo tentando di rilevare automaticamente la tua posizione...",
+        { status: "Attendi qualche secondo.", showButton: false }
+      );
+      state.pendingLocationPromise = requestBrowserLocation()
+        .then((location) => {
+          setLocation(location);
+          hideGeoBanner();
+          return location;
+        })
+        .catch((err) => {
+          const info = describeGeoError(err);
+          showGeoBanner(info.message, {
+            status: info.status,
+            showButton: info.showButton,
+          });
+          return null;
+        })
+        .finally(() => {
+          if (dom.geoBannerButton) {
+            dom.geoBannerButton.disabled = false;
+          }
+          state.pendingLocationPromise = null;
+        });
+      return state.pendingLocationPromise;
+    }
 
-  if (finishConfirmBtn) {
-    finishConfirmBtn.addEventListener("click", () => {
-      handleFinishConfirmClick().catch((err) => {
-        console.error("Errore inatteso conferma fine", err);
-      });
-    });
-  }
+    async function initGeolocation() {
+      const tryFetchLocation = () => {
+        obtainBrowserLocation().catch(() => {
+          // error already handled
+        });
+      };
 
-  optionsLoadedPromise
-    .then(() => {
-      updateStartButtonState();
-      updateEndButtonState();
-    })
-    .catch((err) => {
-      console.warn("Impossibile caricare le opzioni", err);
-    });
+      if (navigator?.permissions?.query) {
+        try {
+          const status = await navigator.permissions.query({ name: "geolocation" });
+          const handleState = (stateValue) => {
+            if (stateValue === "granted") {
+              hideGeoBanner();
+              obtainBrowserLocation();
+            } else if (stateValue === "prompt") {
+              showGeoBanner(
+                "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
+                {
+                  status: 'Quando compare la finestra del browser scegli "Consenti".',
+                  showButton: true,
+                }
+              );
+              tryFetchLocation();
+            } else {
+              showGeoBanner(
+                "La geolocalizzazione è disabilitata per questo sito.",
+                {
+                  status:
+                    'Sblocca l\'autorizzazione dalle impostazioni del browser e poi premi "Attiva geolocalizzazione".',
+                  showButton: true,
+                }
+              );
+            }
+          };
+          handleState(status.state);
+          status.onchange = () => handleState(status.state);
+          return;
+        } catch (err) {
+          console.warn("Impossibile verificare lo stato dei permessi", err);
+        }
+      }
 
-  updateUiForEntry(null);
-});
+      showGeoBanner(
+        "Consenti alla pagina di accedere alla tua posizione per registrare le presenze.",
+        {
+          status: 'Quando compare la finestra del browser scegli "Consenti".',
+          showButton: true,
+        }
+      );
+      tryFetchLocation();
+    }
+
+    async function resolveLocationForAction({ forcePrompt = false } = {}) {
+      try {
+        const location = await obtainBrowserLocation({ forcePrompt });
+        if (location) {
+          setLocation(location);
+          return location;
+        }
+      } catch (err) {
+        // handled downstream
+      }
+      const fallback =
+        (dom.geoInput?.value || state.cachedLocation || "").toString().trim() || null;
+      return fallback;
+    }
+
+    async function safeJson(res) {
+      try {
+        return await res.json();
+      } catch (err) {
+        return null;
+      }
