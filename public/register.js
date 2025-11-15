@@ -55,6 +55,17 @@ function enforceUppercaseInput(input) {
   });
 }
 
+function showFarewellMessageIfPresent() {
+  const params = new URLSearchParams(window.location.search);
+  const farewell = params.get("goodbye");
+  if (!farewell) return;
+  showFeedback(farewell, "success");
+  if (typeof window.history?.replaceState === "function") {
+    const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+    window.history.replaceState({}, document.title, cleanUrl || "/");
+  }
+}
+
 [
   "registerFirstName",
   "registerLastName",
@@ -64,6 +75,8 @@ function enforceUppercaseInput(input) {
   const input = document.getElementById(id);
   enforceUppercaseInput(input);
 });
+
+showFarewellMessageIfPresent();
 
 document
   .getElementById("registerForm")

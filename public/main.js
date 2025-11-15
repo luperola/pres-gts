@@ -801,6 +801,22 @@
           : "Turno concluso.",
         { timeout: 10000 }
       );
+      const farewellMessage = "Grazie per il tuo lavoro! Arrivederci!";
+      try {
+        await fetch("/api/logout-user", {
+          method: "POST",
+          credentials: "same-origin",
+        });
+      } catch (logoutErr) {
+        console.warn(
+          "Impossibile eseguire il logout automatico dopo la fine del lavoro",
+          logoutErr
+        );
+      } finally {
+        const params = new URLSearchParams();
+        params.set("goodbye", farewellMessage);
+        window.location.href = `/register.html?${params.toString()}`;
+      }
     } catch (err) {
       console.error("Errore durante la chiusura turno", err);
       showAlert(
