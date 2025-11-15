@@ -28,9 +28,23 @@ function populateSelect(select, values, options = {}) {
     select.appendChild(placeholder);
   }
   for (const v of values) {
+    let optionValue = "";
+    let optionLabel = "";
+    if (v && typeof v === "object") {
+      optionValue =
+        typeof v.value === "string" && v.value.trim() ? v.value.trim() : "";
+      optionLabel =
+        typeof v.label === "string" && v.label.trim()
+          ? v.label.trim()
+          : optionValue;
+    } else if (typeof v === "string") {
+      optionValue = v;
+      optionLabel = v;
+    }
+    if (!optionValue) continue;
     const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
+    opt.value = optionValue;
+    opt.textContent = optionLabel || optionValue;
     select.appendChild(opt);
   }
   let hasSelected = false;
@@ -55,6 +69,43 @@ function populateSelect(select, values, options = {}) {
   }
 }
 
+function formatOperatorLabel(operatorValue) {
+  if (typeof operatorValue !== "string") return "";
+  const upperValue = operatorValue.trim().toLocaleUpperCase("it-IT");
+  if (!upperValue) return "";
+  const parts = upperValue.split(/\s+/);
+  if (parts.length < 2) {
+    return upperValue;
+  }
+  const last = parts.pop();
+  return `${last} ${parts.join(" ")}`.trim();
+}
+
+function prepareOperatorOptions(list, assignedValue = "") {
+  const normalizedAssigned =
+    typeof assignedValue === "string"
+      ? assignedValue.trim().toLocaleUpperCase("it-IT")
+      : "";
+  const results = [];
+  const seen = new Set();
+  const addValue = (raw) => {
+    if (typeof raw !== "string") return;
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const upper = trimmed.toLocaleUpperCase("it-IT");
+    if (seen.has(upper)) return;
+    seen.add(upper);
+    results.push({ value: upper, label: formatOperatorLabel(upper) });
+  };
+  for (const value of Array.isArray(list) ? list : []) {
+    addValue(value);
+  }
+  if (normalizedAssigned) {
+    addValue(normalizedAssigned);
+  }
+  return { options: results, assigned: normalizedAssigned };
+}
+
 async function fetchUserProfile() {
   try {
     const res = await fetch("/api/user/profile", {
@@ -75,39 +126,26 @@ async function loadOptions(assignedOperatorName = "") {
     const res = await fetch("/api/options");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
-    let operators = data.operators || [];
-    const trimmedAssigned = assignedOperatorName.trim();
-    const assignedDisplay = trimmedAssigned
-      ? trimmedAssigned.toUpperCase()
-      : "";
-    if (assignedDisplay) {
-      const matchLower = trimmedAssigned.toLowerCase();
-      operators = operators
-        .filter(
-          (name) =>
-            typeof name === "string" && name.trim().toLowerCase() === matchLower
-        )
-        .map((name) => name.toUpperCase());
-      if (!operators.length) {
-        operators = [assignedDisplay];
-      }
-    }
-    populateSelect(document.getElementById("operator"), operators, {
-      includePlaceholder: !(assignedDisplay && operators.length === 1),
-      preselectValue: assignedDisplay || null,
+    const { options: operatorOptions, assigned } = prepareOperatorOptions(
+      data.operators || [],
+      assignedOperatorName
+    );
+    populateSelect(document.getElementById("operator"), operatorOptions, {
+      includePlaceholder: !(assigned && operatorOptions.length === 1),
+      preselectValue: assigned || null,
     });
     populateSelect(document.getElementById("cantiere"), data.cantieri || []);
     populateSelect(document.getElementById("macchina"), data.macchine || []);
     populateSelect(document.getElementById("linea"), data.linee || []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
-    const fallbackDisplay = assignedOperatorName
-      ? assignedOperatorName.toUpperCase()
-      : "";
-    const fallbackOperators = fallbackDisplay ? [fallbackDisplay] : [];
+    const { options: fallbackOperators, assigned } = prepareOperatorOptions(
+      [],
+      assignedOperatorName
+    );
     populateSelect(document.getElementById("operator"), fallbackOperators, {
-      includePlaceholder: !(fallbackDisplay && fallbackOperators.length === 1),
-      preselectValue: fallbackDisplay || null,
+      includePlaceholder: !(assigned && fallbackOperators.length === 1),
+      preselectValue: assigned || null,
     });
     populateSelect(document.getElementById("cantiere"), []);
     populateSelect(document.getElementById("macchina"), []);

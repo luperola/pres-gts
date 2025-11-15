@@ -94,13 +94,15 @@ async function fetchOptions() {
 }
 
 async function addOption(category, value, inputEl) {
+  const normalizedValue =
+    typeof value === "string" ? value.toLocaleUpperCase("it-IT") : value;
   const res = await fetch("/api/options", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: "Bearer " + TOKEN,
     },
-    body: JSON.stringify({ category, value }),
+    body: JSON.stringify({ category, value: normalizedValue }),
   });
   if (res.status === 401) {
     handleUnauthorized();
@@ -152,12 +154,34 @@ async function removeOption(category, value) {
   setAlert(`Voce rimossa ${removePrep} ${label}.`, "success");
 }
 
+function enforceUppercaseInput(input) {
+  if (!input) return;
+  input.style.textTransform = "uppercase";
+  input.addEventListener("input", () => {
+    const { selectionStart, selectionEnd } = input;
+    const upperValue = input.value.toLocaleUpperCase("it-IT");
+    if (input.value !== upperValue) {
+      input.value = upperValue;
+      if (
+        typeof selectionStart === "number" &&
+        typeof selectionEnd === "number"
+      ) {
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   TOKEN = sessionStorage.getItem("token");
   if (!TOKEN) {
     handleUnauthorized();
     return;
   }
+
+  document
+    .querySelectorAll('.option-form input[type="text"]')
+    .forEach((input) => enforceUppercaseInput(input));
 
   document.querySelectorAll(".option-form").forEach((form) => {
     form.addEventListener("submit", (ev) => {

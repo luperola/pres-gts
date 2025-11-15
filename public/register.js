@@ -37,6 +37,34 @@ function redirectToIndex() {
   window.location.href = "/index.html";
 }
 
+function enforceUppercaseInput(input) {
+  if (!input) return;
+  input.style.textTransform = "uppercase";
+  input.addEventListener("input", () => {
+    const { selectionStart, selectionEnd } = input;
+    const upperValue = input.value.toLocaleUpperCase("it-IT");
+    if (input.value !== upperValue) {
+      input.value = upperValue;
+      if (
+        typeof selectionStart === "number" &&
+        typeof selectionEnd === "number"
+      ) {
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+  });
+}
+
+[
+  "registerFirstName",
+  "registerLastName",
+  "loginFirstName",
+  "loginLastName",
+].forEach((id) => {
+  const input = document.getElementById(id);
+  enforceUppercaseInput(input);
+});
+
 document
   .getElementById("registerForm")
   .addEventListener("submit", async (e) => {
