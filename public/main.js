@@ -28,23 +28,9 @@ function populateSelect(select, values, options = {}) {
     select.appendChild(placeholder);
   }
   for (const v of values) {
-    let optionValue = "";
-    let optionLabel = "";
-    if (v && typeof v === "object") {
-      optionValue =
-        typeof v.value === "string" && v.value.trim() ? v.value.trim() : "";
-      optionLabel =
-        typeof v.label === "string" && v.label.trim()
-          ? v.label.trim()
-          : optionValue;
-    } else if (typeof v === "string") {
-      optionValue = v;
-      optionLabel = v;
-    }
-    if (!optionValue) continue;
     const opt = document.createElement("option");
-    opt.value = optionValue;
-    opt.textContent = optionLabel || optionValue;
+    opt.value = v;
+    opt.textContent = v;
     select.appendChild(opt);
   }
   let hasSelected = false;
@@ -69,43 +55,6 @@ function populateSelect(select, values, options = {}) {
   }
 }
 
-function formatOperatorLabel(operatorValue) {
-  if (typeof operatorValue !== "string") return "";
-  const upperValue = operatorValue.trim().toLocaleUpperCase("it-IT");
-  if (!upperValue) return "";
-  const parts = upperValue.split(/\s+/);
-  if (parts.length < 2) {
-    return upperValue;
-  }
-  const last = parts.pop();
-  return `${last} ${parts.join(" ")}`.trim();
-}
-
-function prepareOperatorOptions(list, assignedValue = "") {
-  const normalizedAssigned =
-    typeof assignedValue === "string"
-      ? assignedValue.trim().toLocaleUpperCase("it-IT")
-      : "";
-  const results = [];
-  const seen = new Set();
-  const addValue = (raw) => {
-    if (typeof raw !== "string") return;
-    const trimmed = raw.trim();
-    if (!trimmed) return;
-    const upper = trimmed.toLocaleUpperCase("it-IT");
-    if (seen.has(upper)) return;
-    seen.add(upper);
-    results.push({ value: upper, label: formatOperatorLabel(upper) });
-  };
-  for (const value of Array.isArray(list) ? list : []) {
-    addValue(value);
-  }
-  if (normalizedAssigned) {
-    addValue(normalizedAssigned);
-  }
-  return { options: results, assigned: normalizedAssigned };
-}
-
 async function fetchUserProfile() {
   try {
     const res = await fetch("/api/user/profile", {
@@ -121,31 +70,41 @@ async function fetchUserProfile() {
   }
   return null;
 }
+
 async function loadOptions(assignedOperatorName = "") {
   try {
     const res = await fetch("/api/options");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
-    const { options: operatorOptions, assigned } = prepareOperatorOptions(
-      data.operators || [],
-      assignedOperatorName
-    );
-    populateSelect(document.getElementById("operator"), operatorOptions, {
-      includePlaceholder: !(assigned && operatorOptions.length === 1),
-      preselectValue: assigned || null,
+    let operators = data.operators || [];
+    const normalizedAssigned = assignedOperatorName.trim();
+    if (normalizedAssigned) {
+      const matchLower = normalizedAssigned.toLowerCase();
+      operators = operators.filter(
+        (name) =>
+          typeof name === "string" && name.trim().toLowerCase() === matchLower
+      );
+      if (!operators.length) {
+        operators = [normalizedAssigned];
+      }
+    }
+    populateSelect(document.getElementById("operator"), operators, {
+      includePlaceholder: !(normalizedAssigned && operators.length === 1),
+      preselectValue: normalizedAssigned || null,
     });
     populateSelect(document.getElementById("cantiere"), data.cantieri || []);
     populateSelect(document.getElementById("macchina"), data.macchine || []);
     populateSelect(document.getElementById("linea"), data.linee || []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
-    const { options: fallbackOperators, assigned } = prepareOperatorOptions(
-      [],
-      assignedOperatorName
-    );
+    const fallbackOperators = assignedOperatorName
+      ? [assignedOperatorName]
+      : [];
     populateSelect(document.getElementById("operator"), fallbackOperators, {
-      includePlaceholder: !(assigned && fallbackOperators.length === 1),
-      preselectValue: assigned || null,
+      includePlaceholder: !(
+        assignedOperatorName && fallbackOperators.length === 1
+      ),
+      preselectValue: assignedOperatorName || null,
     });
     populateSelect(document.getElementById("cantiere"), []);
     populateSelect(document.getElementById("macchina"), []);
@@ -453,21 +412,16 @@ document.addEventListener("DOMContentLoaded", () => {
     currentUserProfile = profile;
     const assignedOperator =
       profile && typeof profile.operatorName === "string"
-        ? profile.operatorName.trim().toUpperCase()
+        ? profile.operatorName.trim()
         : "";
     await loadOptions(assignedOperator);
-    const operatorSelect = document.getElementById("operator");
-    let selectedOperator = "";
-    if (operatorSelect) {
-      if (assignedOperator) {
+    if (assignedOperator) {
+      const operatorSelect = document.getElementById("operator");
+      if (operatorSelect) {
         operatorSelect.value = assignedOperator;
         operatorSelect.dataset.assignedOperator = assignedOperator;
-        selectedOperator = operatorSelect.value.trim();
-      } else if (typeof operatorSelect.value === "string") {
-        selectedOperator = operatorSelect.value.trim();
       }
     }
-    return { assignedOperator: selectedOperator || assignedOperator || "" };
   }
 
   const optionsLoadedPromise = initializeOptions();
@@ -1036,26 +990,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
-
-  optionsLoadedPromise
-    .then(({ assignedOperator }) => {
-      const operatorSelectEl = document.getElementById("operator");
-      const assignedFromDataset =
-        operatorSelectEl?.dataset?.assignedOperator?.trim() || "";
-      const initialValue =
-        operatorSelectEl?.value?.trim() ||
-        (typeof assignedOperator === "string" ? assignedOperator.trim() : "") ||
-        assignedFromDataset;
-      if (initialValue) {
-        fetchStatusForOperatorValue(initialValue);
-      } else {
-        updateUiForEntry(null);
-      }
-    })
-    .catch((err) => {
-      console.warn("Impossibile inizializzare lo stato del turno", err);
-      updateUiForEntry(null);
-    });
 
   optionsLoadedPromise
     .then(() => {
