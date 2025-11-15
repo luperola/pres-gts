@@ -570,6 +570,41 @@ async function createUser({
   );
 }
 
+async function updateUser({
+  id,
+  passwordHash,
+  firstName = null,
+  lastName = null,
+  operatorName = null,
+}) {
+  const fields = [];
+  const values = [];
+  let idx = 1;
+
+  if (typeof passwordHash === "string" && passwordHash) {
+    fields.push(`password_hash = $${idx}`);
+    values.push(passwordHash);
+    idx += 1;
+  }
+  fields.push(`first_name = $${idx}`);
+  values.push(firstName);
+  idx += 1;
+  fields.push(`last_name = $${idx}`);
+  values.push(lastName);
+  idx += 1;
+  fields.push(`operator_name = $${idx}`);
+  values.push(operatorName);
+  idx += 1;
+
+  values.push(id);
+  await query(
+    `UPDATE users
+     SET ${fields.join(", ")}
+     WHERE id = $${idx}`,
+    values
+  );
+}
+
 function readOperatorsFromXlsx() {
   const wb = xlsx.readFile(OPERATORS_XLSX);
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -1001,11 +1036,6 @@ async function registerUserHandler(req, res) {
   if (!loginKey || !password || password.length < 6) {
     return res.status(400).json({ error: "Dati non validi" });
   }
-
-  const existing = await findUserByLoginKey(loginKey);
-  if (existing) {
-    return res.status(409).json({ error: "Utente già registrato" });
-  }
   await ensureOptionSeed();
   const options = await fetchOptions();
   const fullName = buildFullName(normalizedFirstName, normalizedLastName);
@@ -1017,13 +1047,32 @@ async function registerUserHandler(req, res) {
     });
   }
 
+  const existing = await findUserByLoginKey(loginKey);
+  const operatorName = matchedOperator.toUpperCase();
+  const passwordHash = hashPassword(password);
+  if (existing) {
+    try {
+      await updateUser({
+        id: existing.id,
+        passwordHash,
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        operatorName,
+      });
+    } catch (err) {
+      return res.status(500).json({ error: "Impossibile aggiornare l'utente" });
+    }
+    issueUserToken(res, existing.id);
+    return res.json({ ok: true, updated: true });
+  }
+
   const newUser = {
     id: crypto.randomUUID(),
     loginKey,
-    passwordHash: hashPassword(password),
+    passwordHash,
     firstName: normalizedFirstName,
     lastName: normalizedLastName,
-    operatorName: matchedOperator.toUpperCase(),
+    operatorName,
   };
   try {
     await createUser(newUser);
