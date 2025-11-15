@@ -131,6 +131,7 @@ const INIT_SQL_PATH = path.join(__dirname, "sql", "init.sql");
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 const ALLOWED_BREAK_MINUTES = new Set([0, 30, 60, 90]);
+const MINUTES_IN_DAY = 24 * 60;
 
 function extractClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -662,6 +663,26 @@ function normalizeTimeString(value) {
     2,
     "0"
   )}`;
+}
+
+function calculateShiftDurationMinutes(startMinutes, endMinutes) {
+  if (
+    typeof startMinutes !== "number" ||
+    Number.isNaN(startMinutes) ||
+    typeof endMinutes !== "number" ||
+    Number.isNaN(endMinutes)
+  ) {
+    return null;
+  }
+  if (endMinutes === startMinutes) {
+    return null;
+  }
+  let adjustedEnd = endMinutes;
+  if (endMinutes < startMinutes) {
+    adjustedEnd += MINUTES_IN_DAY;
+  }
+  const diff = adjustedEnd - startMinutes;
+  return diff > 0 ? diff : null;
 }
 
 async function createEntryInDb(entry, req) {
@@ -1369,13 +1390,17 @@ app.post("/api/entry/finish", async (req, res) => {
         .json({ error: "Seleziona un tempo pausa valido." });
     }
 
-    if (endMinutes <= startMinutes) {
+    const elapsedMinutes = calculateShiftDurationMinutes(
+      startMinutes,
+      endMinutes
+    );
+    if (elapsedMinutes === null) {
       return res.status(400).json({
         error: "L'ora di fine deve essere successiva all'inizio.",
       });
     }
 
-    const workedMinutes = endMinutes - startMinutes - parsedBreak;
+    const workedMinutes = elapsedMinutes - parsedBreak;
     if (workedMinutes <= 0) {
       return res.status(400).json({
         error: "La durata del lavoro deve essere positiva.",
@@ -1478,7 +1503,11 @@ app.post("/api/entry", async (req, res) => {
         .status(400)
         .json({ error: "Ora fine non valida (usa HH:MM)." });
     }
-    if (endMinutes <= startMinutes) {
+    const elapsedMinutes = calculateShiftDurationMinutes(
+      startMinutes,
+      endMinutes
+    );
+    if (elapsedMinutes === null) {
       return res
         .status(400)
         .json({ error: "L'ora di fine deve essere successiva all'inizio." });
@@ -1496,7 +1525,7 @@ app.post("/api/entry", async (req, res) => {
         .json({ error: "Seleziona un tempo pausa valido." });
     }
     // ore numerico
-    const workedMinutes = endMinutes - startMinutes - parsedBreak;
+    const workedMinutes = elapsedMinutes - parsedBreak;
     if (workedMinutes <= 0) {
       return res
         .status(400)
