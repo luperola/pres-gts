@@ -390,6 +390,11 @@ function findOperatorMatch(operators, fullName) {
     }) || null
   );
 }
+
+function buildLoginKey(firstName, lastName) {
+  const fullName = buildFullName(firstName, lastName);
+  return fullName ? fullName.toLowerCase() : "";
+}
 function sortOptionValues(values) {
   return values.sort((a, b) =>
     a.localeCompare(b, "it", { sensitivity: "base", ignorePunctuation: true })
@@ -522,13 +527,16 @@ async function deleteOption(category, value) {
   return fetchOptions();
 }
 
-async function findUserByEmail(email) {
+async function findUserByLoginKey(loginKey) {
+  const normalizedKey =
+    typeof loginKey === "string" ? loginKey.trim().toLowerCase() : "";
+  if (!normalizedKey) return null;
   return query(
     `SELECT id, email, password_hash, first_name, last_name, operator_name
      FROM users
-     WHERE email = $1
+      WHERE LOWER(email) = $1
      LIMIT 1`,
-    [email]
+    [normalizedKey]
   ).then((res) => (res.rows.length ? res.rows[0] : null));
 }
 
@@ -544,16 +552,21 @@ async function findUserById(id) {
 
 async function createUser({
   id,
-  email,
+  loginKey,
   passwordHash,
   firstName = null,
   lastName = null,
   operatorName = null,
 }) {
+  const normalizedLoginKey =
+    typeof loginKey === "string" ? loginKey.trim().toLowerCase() : "";
+  if (!normalizedLoginKey) {
+    throw new Error("Chiave di login non valida");
+  }
   await query(
     `INSERT INTO users (id, email, password_hash, first_name, last_name, operator_name)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, email, passwordHash, firstName, lastName, operatorName]
+    [id, normalizedLoginKey, passwordHash, firstName, lastName, operatorName]
   );
 }
 
@@ -981,23 +994,15 @@ function verifyPassword(password, stored) {
 app.post("/api/register", registerUserHandler);
 
 async function registerUserHandler(req, res) {
-  const { email, password, firstName, lastName } = req.body || {};
-  const normalizedEmail = String(email || "")
-    .trim()
-    .toLowerCase();
+  const { password, firstName, lastName } = req.body || {};
   const normalizedFirstName = normalizePersonName(firstName);
   const normalizedLastName = normalizePersonName(lastName);
-  if (
-    !normalizedEmail ||
-    !password ||
-    password.length < 6 ||
-    !normalizedFirstName ||
-    !normalizedLastName
-  ) {
+  const loginKey = buildLoginKey(normalizedFirstName, normalizedLastName);
+  if (!loginKey || !password || password.length < 6) {
     return res.status(400).json({ error: "Dati non validi" });
   }
 
-  const existing = await findUserByEmail(normalizedEmail);
+  const existing = await findUserByLoginKey(loginKey);
   if (existing) {
     return res.status(409).json({ error: "Utente già registrato" });
   }
@@ -1014,11 +1019,11 @@ async function registerUserHandler(req, res) {
 
   const newUser = {
     id: crypto.randomUUID(),
-    email: normalizedEmail,
+    loginKey,
     passwordHash: hashPassword(password),
     firstName: normalizedFirstName,
     lastName: normalizedLastName,
-    operatorName: matchedOperator,
+    operatorName: matchedOperator.toUpperCase(),
   };
   try {
     await createUser(newUser);
@@ -1029,14 +1034,14 @@ async function registerUserHandler(req, res) {
   return res.json({ ok: true });
 }
 app.post("/api/login-user", async (req, res) => {
-  const { email, password } = req.body || {};
-  const normalizedEmail = String(email || "")
-    .trim()
-    .toLowerCase();
-  if (!normalizedEmail || !password) {
+  const { password, firstName, lastName } = req.body || {};
+  const normalizedFirstName = normalizePersonName(firstName);
+  const normalizedLastName = normalizePersonName(lastName);
+  const loginKey = buildLoginKey(normalizedFirstName, normalizedLastName);
+  if (!loginKey || !password) {
     return res.status(400).json({ error: "Dati non validi" });
   }
-  const user = await findUserByEmail(normalizedEmail);
+  const user = await findUserByLoginKey(loginKey);
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: "Credenziali non valide" });
   }
@@ -1066,7 +1071,10 @@ app.get("/api/user/profile", userAuthMiddleware, async (req, res) => {
         email: user.email,
         firstName: user.first_name || "",
         lastName: user.last_name || "",
-        operatorName: user.operator_name || "",
+        operatorName:
+          typeof user.operator_name === "string"
+            ? user.operator_name.trim().toUpperCase()
+            : "",
       },
     });
   } catch (err) {

@@ -44,12 +44,11 @@ document
     hideFeedback();
     const firstName = document.getElementById("registerFirstName").value.trim();
     const lastName = document.getElementById("registerLastName").value.trim();
-    const email = document.getElementById("registerEmail").value.trim();
     const password = document.getElementById("registerPassword").value;
 
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !password) {
       showFeedback(
-        "Compila nome, cognome, email e password per completare la registrazione.",
+        "Compila nome, cognome e password per completare la registrazione.",
         "warning"
       );
       return;
@@ -58,7 +57,6 @@ document
       await handleAuthSubmit("/api/register", {
         firstName,
         lastName,
-        email,
         password,
       });
       showFeedback(
@@ -74,11 +72,16 @@ document
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   hideFeedback();
-  const email = document.getElementById("loginEmail").value.trim();
+  const firstName = document.getElementById("loginFirstName").value.trim();
+  const lastName = document.getElementById("loginLastName").value.trim();
   const password = document.getElementById("loginPassword").value;
-  if (!email || !password) return;
+  if (!firstName || !lastName || !password) return;
   try {
-    await handleAuthSubmit("/api/login-user", { email, password });
+    await handleAuthSubmit("/api/login-user", {
+      firstName,
+      lastName,
+      password,
+    });
     showFeedback("Accesso eseguito! Reindirizzamento in corso...", "success");
     setTimeout(redirectToIndex, 800);
   } catch (err) {

@@ -70,41 +70,44 @@ async function fetchUserProfile() {
   }
   return null;
 }
-
 async function loadOptions(assignedOperatorName = "") {
   try {
     const res = await fetch("/api/options");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     let operators = data.operators || [];
-    const normalizedAssigned = assignedOperatorName.trim();
-    if (normalizedAssigned) {
-      const matchLower = normalizedAssigned.toLowerCase();
-      operators = operators.filter(
-        (name) =>
-          typeof name === "string" && name.trim().toLowerCase() === matchLower
-      );
+    const trimmedAssigned = assignedOperatorName.trim();
+    const assignedDisplay = trimmedAssigned
+      ? trimmedAssigned.toUpperCase()
+      : "";
+    if (assignedDisplay) {
+      const matchLower = trimmedAssigned.toLowerCase();
+      operators = operators
+        .filter(
+          (name) =>
+            typeof name === "string" && name.trim().toLowerCase() === matchLower
+        )
+        .map((name) => name.toUpperCase());
       if (!operators.length) {
-        operators = [normalizedAssigned];
+        operators = [assignedDisplay];
       }
     }
     populateSelect(document.getElementById("operator"), operators, {
-      includePlaceholder: !(normalizedAssigned && operators.length === 1),
-      preselectValue: normalizedAssigned || null,
+      includePlaceholder: !(assignedDisplay && operators.length === 1),
+      preselectValue: assignedDisplay || null,
     });
     populateSelect(document.getElementById("cantiere"), data.cantieri || []);
     populateSelect(document.getElementById("macchina"), data.macchine || []);
     populateSelect(document.getElementById("linea"), data.linee || []);
   } catch (err) {
     console.error("Impossibile caricare le opzioni", err);
-    const fallbackOperators = assignedOperatorName
-      ? [assignedOperatorName]
-      : [];
+    const fallbackDisplay = assignedOperatorName
+      ? assignedOperatorName.toUpperCase()
+      : "";
+    const fallbackOperators = fallbackDisplay ? [fallbackDisplay] : [];
     populateSelect(document.getElementById("operator"), fallbackOperators, {
-      includePlaceholder: !(
-        assignedOperatorName && fallbackOperators.length === 1
-      ),
-      preselectValue: assignedOperatorName || null,
+      includePlaceholder: !(fallbackDisplay && fallbackOperators.length === 1),
+      preselectValue: fallbackDisplay || null,
     });
     populateSelect(document.getElementById("cantiere"), []);
     populateSelect(document.getElementById("macchina"), []);
@@ -412,7 +415,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentUserProfile = profile;
     const assignedOperator =
       profile && typeof profile.operatorName === "string"
-        ? profile.operatorName.trim()
+        ? profile.operatorName.trim().toUpperCase()
         : "";
     await loadOptions(assignedOperator);
     if (assignedOperator) {
