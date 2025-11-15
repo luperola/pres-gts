@@ -456,13 +456,18 @@ document.addEventListener("DOMContentLoaded", () => {
         ? profile.operatorName.trim().toUpperCase()
         : "";
     await loadOptions(assignedOperator);
-    if (assignedOperator) {
-      const operatorSelect = document.getElementById("operator");
-      if (operatorSelect) {
+    const operatorSelect = document.getElementById("operator");
+    let selectedOperator = "";
+    if (operatorSelect) {
+      if (assignedOperator) {
         operatorSelect.value = assignedOperator;
         operatorSelect.dataset.assignedOperator = assignedOperator;
+        selectedOperator = operatorSelect.value.trim();
+      } else if (typeof operatorSelect.value === "string") {
+        selectedOperator = operatorSelect.value.trim();
       }
     }
+    return { assignedOperator: selectedOperator || assignedOperator || "" };
   }
 
   const optionsLoadedPromise = initializeOptions();
@@ -1031,6 +1036,26 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
+
+  optionsLoadedPromise
+    .then(({ assignedOperator }) => {
+      const operatorSelectEl = document.getElementById("operator");
+      const assignedFromDataset =
+        operatorSelectEl?.dataset?.assignedOperator?.trim() || "";
+      const initialValue =
+        operatorSelectEl?.value?.trim() ||
+        (typeof assignedOperator === "string" ? assignedOperator.trim() : "") ||
+        assignedFromDataset;
+      if (initialValue) {
+        fetchStatusForOperatorValue(initialValue);
+      } else {
+        updateUiForEntry(null);
+      }
+    })
+    .catch((err) => {
+      console.warn("Impossibile inizializzare lo stato del turno", err);
+      updateUiForEntry(null);
+    });
 
   optionsLoadedPromise
     .then(() => {
