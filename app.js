@@ -1769,7 +1769,12 @@ async function startServerWithRetry() {
         typeof addressInfo === "object" && addressInfo && addressInfo.port
           ? addressInfo.port
           : targetPort;
-      console.log(`Server attivo su http://localhost:${activePort}`);
+      const entryUrl = `http://localhost:${activePort}`;
+      console.log(`Server attivo su ${entryUrl}`);
+      console.log(
+        `Porta ${activePort} attiva: puoi entrare nel sito con Ctrl+Click in ${entryUrl}`
+      );
+      //console.log(`Server attivo su http://localhost:${activePort}`);
       server.on("error", (err) => {
         console.error("Errore del server", err);
         process.exit(1);
@@ -1802,7 +1807,7 @@ async function startServerWithRetry() {
     }
   }
 }
-async function bootstrap() {
+/* async function bootstrap() {
   await initializeDatabase();
   await ensureOptionSeed();
   await startServerWithRetry();
@@ -1811,4 +1816,4 @@ async function bootstrap() {
 bootstrap().catch((err) => {
   console.error("Impossibile avviare il server", err);
   process.exit(1);
-});
+}); */
