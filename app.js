@@ -118,7 +118,10 @@ const __filename = f2p(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- Config ---
-const PORT = process.env.PORT || 3000;
+const DEFAULT_PORT = 3000;
+const parsedEnvPort = Number.parseInt(process.env.PORT ?? "", 10);
+const HAS_VALID_ENV_PORT = Number.isFinite(parsedEnvPort) && parsedEnvPort >= 0;
+const PREFERRED_PORT = HAS_VALID_ENV_PORT ? parsedEnvPort : DEFAULT_PORT;
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
 const NOMINATIM_USER_AGENT =
@@ -1727,25 +1730,62 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 });
 
 // --- Avvio ---
-initializeDatabase()
-  .then(() => ensureOptionSeed())
-  .then(() => {
-    const server = app.listen(PORT, () => {
-      console.log(`Server attivo su http://localhost:${PORT}`);
-    });
-    server.on("error", (err) => {
-      if (err.code === "EADDRINUSE") {
-        console.error(
-          `Porta ${PORT} già in uso. Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta.`
-        );
-      } else {
-        console.error("Errore del server", err);
-      }
-      process.exit(1);
-    });
-  })
-
-  .catch((err) => {
-    console.error("Impossibile avviare il server", err);
-    process.exit(1);
+function listenOnPort(port) {
+  return new Promise((resolve, reject) => {
+    const server = app
+      .listen(port)
+      .once("listening", () => resolve(server))
+      .once("error", reject);
   });
+}
+
+async function startServerWithRetry() {
+  const maxAttempts = HAS_VALID_ENV_PORT ? 1 : 10;
+  let currentPort = PREFERRED_PORT;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const server = await listenOnPort(currentPort);
+      const addressInfo = server.address();
+      const activePort =
+        typeof addressInfo === "object" && addressInfo?.port
+          ? addressInfo.port
+          : currentPort;
+      console.log(`Server attivo su http://localhost:${activePort}`);
+      server.on("error", (err) => {
+        console.error("Errore del server", err);
+        process.exit(1);
+      });
+      return server;
+    } catch (err) {
+      if (err?.code !== "EADDRINUSE") {
+        throw err;
+      }
+
+      if (HAS_VALID_ENV_PORT || attempt === maxAttempts - 1) {
+        console.error(
+          `Porta ${currentPort} già in uso. Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta.`
+        );
+        throw err;
+      }
+      const nextPort = currentPort + 1;
+      console.warn(
+        `Porta ${currentPort} occupata, provo automaticamente la porta ${nextPort}...`
+      );
+      currentPort = nextPort;
+    }
+  }
+
+  throw new Error("Impossibile trovare una porta libera");
+}
+
+async function bootstrap() {
+  await initializeDatabase();
+  await ensureOptionSeed();
+  await startServerWithRetry();
+}
+
+bootstrap().catch((err) => {
+  console.error("Impossibile avviare il server", err);
+  process.exit(1);
+});
