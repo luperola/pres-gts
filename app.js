@@ -1760,7 +1760,11 @@ function listenOnPort(port) {
 async function startServerWithRetry() {
   let attempt = 0;
   while (true) {
-    const portToTry = useRandomPort ? 0 : PREFERRED_PORT;
+    //const portToTry = useRandomPort ? 0 : PREFERRED_PORT;
+    const useRandomPort =
+      !HAS_VALID_ENV_PORT && attempt >= MAX_PORT_RETRIES_BEFORE_RANDOM;
+    const targetPort = PREFERRED_PORT;
+    const portToTry = useRandomPort ? 0 : targetPort;
 
     try {
       const server = await listenOnPort(portToTry);
