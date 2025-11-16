@@ -563,6 +563,32 @@
     return parts.join(" e ");
   }
 
+  function buildWorkSummaryPayload(
+    entry,
+    { previousEntry = null, pendingFinish = null } = {}
+  ) {
+    const sanitize = (value) => (typeof value === "string" ? value.trim() : "");
+    const oreValue = Number(entry?.ore);
+    let hoursLabel = "";
+    if (Number.isFinite(oreValue)) {
+      hoursLabel = formatMinutesToReadableTime(Math.round(oreValue * 60));
+    } else if (pendingFinish) {
+      const pendingMinutes = Number(pendingFinish.workedMinutes);
+      if (Number.isFinite(pendingMinutes) && pendingMinutes > 0) {
+        hoursLabel = formatMinutesToReadableTime(pendingMinutes);
+      }
+    }
+    const fallback = previousEntry || {};
+    return {
+      hoursLabel,
+      cantiere: sanitize(entry?.cantiere) || sanitize(fallback.cantiere),
+      macchina: sanitize(entry?.macchina) || sanitize(fallback.macchina),
+      operator: sanitize(entry?.operator) || sanitize(fallback.operator),
+      workDate: sanitize(entry?.data) || sanitize(fallback.data),
+    };
+  }
+
+ 
   async function handleStartClick() {
     if (!dom.form || state.activeEntry) return;
     clearAlert();
@@ -713,8 +739,9 @@
     const startMinutes = parseTimeToMinutes(state.activeEntry.start_time);
     const endMinutes = parseTimeToMinutes(endTime);
     let oreLavorateLabel = "";
+    let workedMinutes = null;
     if (startMinutes !== null && endMinutes !== null) {
-      let workedMinutes = endMinutes - startMinutes;
+      workedMinutes = endMinutes - startMinutes;
       if (workedMinutes < 0) {
         workedMinutes += 24 * 60;
       }
@@ -735,6 +762,7 @@
       endTime,
       breakMinutes,
       descrizione: descrizioneValue,
+      workedMinutes,
     };
     if (dom.finishConfirmBtn) {
       dom.finishConfirmBtn.classList.remove("d-none");
@@ -780,10 +808,13 @@
         return;
       }
       const entry = data?.entry || null;
-      const oreValue = Number(entry?.ore);
-      const oreWorked = Number.isFinite(oreValue)
-        ? formatMinutesToReadableTime(Math.round(oreValue * 60))
-        : "";
+       const previousEntry = state.activeEntry;
+       const pendingFinishSnapshot = state.pendingFinish;
+       const summaryPayload = buildWorkSummaryPayload(entry, {
+         previousEntry,
+         pendingFinish: pendingFinishSnapshot,
+       });
+       const oreWorked = summaryPayload.hoursLabel;
       showAlert(
         "success",
         oreWorked
@@ -801,22 +832,21 @@
           : "Turno concluso.",
         { timeout: 10000 }
       );
-      const farewellMessage = "Grazie per il tuo lavoro! Arrivederci!";
-      try {
-        await fetch("/api/logout-user", {
-          method: "POST",
-          credentials: "same-origin",
-        });
-      } catch (logoutErr) {
-        console.warn(
-          "Impossibile eseguire il logout automatico dopo la fine del lavoro",
-          logoutErr
+           sessionStorage.setItem(
+          "workSummaryData",
+          JSON.stringify({
+            ...summaryPayload,
+            timestamp: Date.now(),
+          })
         );
-      } finally {
-        const params = new URLSearchParams();
-        params.set("goodbye", farewellMessage);
-        window.location.href = `/register.html?${params.toString()}`;
-      }
+      } catch (storageErr) {
+        console.warn(
+        "Impossibile salvare i dati di riepilogo per la validazione",
+          storageErr
+        );
+      } 
+            window.location.href = "/work-summary.html";
+      return;
     } catch (err) {
       console.error("Errore durante la chiusura turno", err);
       showAlert(

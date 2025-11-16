@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Riepilogo ore lavorate</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body {
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        background: #f5f6fa;
+        color: #1f2933;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 1.5rem;
+      }
+      .summary-card {
+        background: #fff;
+        border-radius: 1rem;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.1);
+        max-width: 640px;
+        width: 100%;
+        padding: 2rem;
+      }
+      .summary-card h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+      .summary-card p {
+        line-height: 1.5;
+      }
+      .summary-card textarea {
+        width: 100%;
+        min-height: 120px;
+        border-radius: 0.75rem;
+        border: 1px solid #d1d5db;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        resize: vertical;
+      }
+      .summary-card label {
+        display: block;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+      }
+      .summary-card button {
+        margin-top: 1.5rem;
+        width: 100%;
+        border: none;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #2563eb, #6366f1);
+        color: #fff;
+        padding: 0.85rem 1.5rem;
+        font-size: 1.05rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+      }
+      .summary-card button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      #workSummaryError {
+        color: #b91c1c;
+        font-weight: 600;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+      }
+      #validationStatus {
+        margin-top: 1rem;
+        font-size: 0.95rem;
+        color: #111827;
+      }
+      .d-none {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="summary-card" role="main">
+      <h1>Conferma finale</h1>
+      <p id="workSummaryText"></p>
+      <p id="workSummaryError" class="d-none"></p>
+      <label for="workSummaryComment">
+        Commenti o note aggiuntive (facoltativo)
+      </label>
+      <textarea
+        id="workSummaryComment"
+        placeholder="Inserisci eventuali commenti prima di validare..."
+        aria-label="Commenti opzionali"
+      ></textarea>
+      <button id="validateSummaryBtn">Valida e chiudi</button>
+      <p id="validationStatus" role="status" aria-live="polite"></p>
+    </main>
+    <script src="/work-summary.js" type="module"></script>
+  </body>
+</html>
