@@ -588,7 +588,6 @@
     };
   }
 
- 
   async function handleStartClick() {
     if (!dom.form || state.activeEntry) return;
     clearAlert();
@@ -808,13 +807,13 @@
         return;
       }
       const entry = data?.entry || null;
-       const previousEntry = state.activeEntry;
-       const pendingFinishSnapshot = state.pendingFinish;
-       const summaryPayload = buildWorkSummaryPayload(entry, {
-         previousEntry,
-         pendingFinish: pendingFinishSnapshot,
-       });
-       const oreWorked = summaryPayload.hoursLabel;
+      const previousEntry = state.activeEntry;
+      const pendingFinishSnapshot = state.pendingFinish;
+      const summaryPayload = buildWorkSummaryPayload(entry, {
+        previousEntry,
+        pendingFinish: pendingFinishSnapshot,
+      });
+      const oreWorked = summaryPayload.hoursLabel;
       showAlert(
         "success",
         oreWorked
@@ -832,7 +831,8 @@
           : "Turno concluso.",
         { timeout: 10000 }
       );
-           sessionStorage.setItem(
+      try {
+        sessionStorage.setItem(
           "workSummaryData",
           JSON.stringify({
             ...summaryPayload,
@@ -841,11 +841,11 @@
         );
       } catch (storageErr) {
         console.warn(
-        "Impossibile salvare i dati di riepilogo per la validazione",
+          "Impossibile salvare i dati di riepilogo per la validazione",
           storageErr
         );
-      } 
-            window.location.href = "/work-summary.html";
+      }
+      window.location.href = "/work-summary.html";
       return;
     } catch (err) {
       console.error("Errore durante la chiusura turno", err);
