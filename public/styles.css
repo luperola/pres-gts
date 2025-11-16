@@ -1,1 +1,13 @@
-body{font-size:16px}.card{border-radius:1rem}
+body {
+  font-size: 16px;
+}
+.card {
+  border-radius: 1rem;
+}
+.credential-helper {
+  position: absolute !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}

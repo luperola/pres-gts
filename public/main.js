@@ -621,7 +621,7 @@
       if (!select) return;
       const value = typeof select.value === "string" ? select.value.trim() : "";
       if (!value) {
-        select.setCustomValidity("Devi compilare questo campo");
+        select.setCustomValidity("Compila questo campo");
         valid = false;
       } else {
         select.setCustomValidity("");

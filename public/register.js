@@ -55,6 +55,26 @@ function enforceUppercaseInput(input) {
   });
 }
 
+function updateCredentialHelperValue(prefix) {
+  const firstInput = document.getElementById(`${prefix}FirstName`);
+  const lastInput = document.getElementById(`${prefix}LastName`);
+  const helperInput = document.getElementById(`${prefix}Username`);
+  if (!helperInput) return;
+  const parts = [];
+  if (lastInput?.value) parts.push(lastInput.value.trim());
+  if (firstInput?.value) parts.push(firstInput.value.trim());
+  helperInput.value = parts.join(" ").trim();
+}
+
+function initCredentialHelpers(prefix) {
+  ["FirstName", "LastName"].forEach((field) => {
+    const input = document.getElementById(`${prefix}${field}`);
+    if (!input) return;
+    input.addEventListener("input", () => updateCredentialHelperValue(prefix));
+    updateCredentialHelperValue(prefix);
+  });
+}
+
 function showFarewellMessageIfPresent() {
   const params = new URLSearchParams(window.location.search);
   const farewell = params.get("goodbye");
@@ -75,6 +95,9 @@ function showFarewellMessageIfPresent() {
   const input = document.getElementById(id);
   enforceUppercaseInput(input);
 });
+
+initCredentialHelpers("register");
+initCredentialHelpers("login");
 
 showFarewellMessageIfPresent();
 

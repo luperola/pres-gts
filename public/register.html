@@ -66,6 +66,7 @@
                           type="text"
                           class="form-control"
                           id="registerFirstName"
+                          name="register-first-name"
                           autocomplete="given-name"
                           required
                         />
@@ -78,11 +79,22 @@
                           type="text"
                           class="form-control"
                           id="registerLastName"
+                          name="register-last-name"
                           autocomplete="family-name"
                           required
                         />
                       </div>
                     </div>
+                    <input
+                      type="text"
+                      id="registerUsername"
+                      name="username"
+                      class="credential-helper"
+                      autocomplete="username"
+                      spellcheck="false"
+                      tabindex="-1"
+                      aria-hidden="true"
+                    />
                     <div class="form-text mb-3">
                       Inserisci cognome e nome esattamente come presenti
                       nell'elenco operatori.
@@ -95,6 +107,8 @@
                         type="password"
                         class="form-control"
                         id="registerPassword"
+                        name="register-password"
+                        autocomplete="new-password"
                         minlength="6"
                         required
                       />
@@ -118,6 +132,7 @@
                           type="text"
                           class="form-control"
                           id="loginFirstName"
+                          name="login-first-name"
                           autocomplete="given-name"
                           required
                         />
@@ -130,11 +145,22 @@
                           type="text"
                           class="form-control"
                           id="loginLastName"
+                          name="login-last-name"
                           autocomplete="family-name"
                           required
                         />
                       </div>
                     </div>
+                    <input
+                      type="text"
+                      id="loginUsername"
+                      name="username"
+                      class="credential-helper"
+                      autocomplete="username"
+                      spellcheck="false"
+                      tabindex="-1"
+                      aria-hidden="true"
+                    />
                     <div class="mb-3">
                       <label for="loginPassword" class="form-label"
                         >Password</label
@@ -143,6 +169,8 @@
                         type="password"
                         class="form-control"
                         id="loginPassword"
+                        name="login-password"
+                        autocomplete="current-password"
                         required
                       />
                     </div>
