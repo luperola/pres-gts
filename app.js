@@ -119,11 +119,13 @@ const __dirname = path.dirname(__filename);
 
 // --- Config ---
 const DEFAULT_PORT = 3000;
-const parsedEnvPort = Number.parseInt(process.env.PORT ?? "", 10);
+const envPortRaw = typeof process.env.PORT === "string" ? process.env.PORT : "";
+const parsedEnvPort = Number.parseInt(envPortRaw, 10);
 const HAS_VALID_ENV_PORT = Number.isFinite(parsedEnvPort) && parsedEnvPort >= 0;
 const PREFERRED_PORT = HAS_VALID_ENV_PORT ? parsedEnvPort : DEFAULT_PORT;
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
+const MAX_PORT_RETRIES_BEFORE_RANDOM = 3;
 const NOMINATIM_USER_AGENT =
   process.env.NOMINATIM_USER_AGENT || "pres-gts/1.0 (admin@pres-gts.local)";
 let lastNominatimRequestAt = 0;
@@ -135,6 +137,9 @@ const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 const ALLOWED_BREAK_MINUTES = new Set([0, 30, 60, 90]);
 const MINUTES_IN_DAY = 24 * 60;
+function coalesce(value, fallback) {
+  return value !== undefined && value !== null ? value : fallback;
+}
 
 function extractClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -142,7 +147,7 @@ function extractClientIp(req) {
     ? forwarded[0]
     : typeof forwarded === "string"
     ? forwarded.split(",")[0]
-    : req.socket?.remoteAddress;
+    : req.socket && req.socket.remoteAddress;
   if (!rawIp) return null;
   const ip = rawIp.replace(/^::ffff:/, "").trim();
   if (!ip) return null;
@@ -309,7 +314,8 @@ async function reverseGeocodeCoordinates(lat, lon) {
     const data = await res.json();
     return formatNominatimResult(data);
   } catch (err) {
-    console.warn("Reverse geocode fallito", err?.message || err);
+    const errorMessage = err && err.message ? err.message : err;
+    console.warn("Reverse geocode fallito", errorMessage);
     return null;
   }
 }
@@ -626,7 +632,8 @@ function readOperatorsFromXlsx() {
 }
 
 function dmyToIso(dmy) {
-  const m = dmy?.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const hasValue = typeof dmy === "string";
+  const m = hasValue ? dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/) : null;
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
   return `${yyyy}-${mm}-${dd}`;
@@ -716,7 +723,10 @@ async function createEntryInDb(entry, req) {
     throw new Error("Formato data non valido (usa DD/MM/YYYY).");
   }
 
-  const preferredStartLocation = startLocation ?? locationFromBody ?? "";
+  const preferredStartLocation = coalesce(
+    startLocation,
+    coalesce(locationFromBody, "")
+  );
   const normalizedPreferredStart = normalizeLocationString(
     preferredStartLocation
   );
@@ -731,7 +741,9 @@ async function createEntryInDb(entry, req) {
 
   const normalizedStartLocation =
     normalizedPreferredStart || normalizedLocation || "";
-  const normalizedEndLocation = normalizeLocationString(endLocation ?? "");
+  const normalizedEndLocation = normalizeLocationString(
+    coalesce(endLocation, "")
+  );
 
   const normalizedStart = normalizeTimeString(startTime);
   const normalizedEnd = normalizeTimeString(endTime);
@@ -972,7 +984,7 @@ function getUserTokenFromReq(req) {
     return bearerToken;
   }
   const cookies = parseCookies(req.headers.cookie);
-  const cookieToken = cookies?.userToken;
+  const cookieToken = cookies && cookies.userToken;
   if (cookieToken && userTokens.has(cookieToken)) {
     return cookieToken;
   }
@@ -1129,7 +1141,7 @@ app.post("/api/logout-user", async (req, res) => {
 });
 
 app.get("/api/user/profile", userAuthMiddleware, async (req, res) => {
-  const userId = req.userInfo?.userId;
+  const userId = req.userInfo ? req.userInfo.userId : undefined;
   if (!userId) {
     return res.status(401).json({ error: "Utente non autenticato" });
   }
@@ -1209,9 +1221,10 @@ app.post("/api/options", authMiddleware, async (req, res) => {
 });
 
 app.delete("/api/options", authMiddleware, async (req, res) => {
-  const category = String(req.body?.category || "").toLowerCase();
-  const value =
-    typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  const bodyCategory = req.body && req.body.category;
+  const bodyValue = req.body && req.body.value;
+  const category = String(bodyCategory || "").toLowerCase();
+  const value = typeof bodyValue === "string" ? bodyValue.trim() : "";
   if (!OPTION_CATEGORIES.includes(category) || !value) {
     return res.status(400).json({ error: "Categoria o valore non valido" });
   }
@@ -1246,8 +1259,9 @@ app.get("/api/operators", async (req, res) => {
 // --- CREA VOCE (chiamato da index.html) ---
 // --- CREA VOCE (chiamato da index.html) ---
 app.get("/api/entry/status", async (req, res) => {
+  const operatorParam = req.query && req.query.operator;
   const operator =
-    typeof req.query?.operator === "string" ? req.query.operator.trim() : "";
+    typeof operatorParam === "string" ? operatorParam.trim() : "";
   if (!operator) {
     return res.status(400).json({ error: "Operatore non valido." });
   }
@@ -1412,7 +1426,9 @@ app.post("/api/entry/finish", async (req, res) => {
 
     const ore = Number((workedMinutes / 60).toFixed(2));
 
-    let normalizedEndLocation = normalizeLocationString(endLocationRaw ?? "");
+    let normalizedEndLocation = normalizeLocationString(
+      coalesce(endLocationRaw, "")
+    );
     if (!normalizedEndLocation) {
       const fallback = await resolveLocationFromRequest(req);
       if (fallback) {
@@ -1613,7 +1629,8 @@ app.delete("/api/entries/:id", authMiddleware, async (req, res) => {
 
 // --- DELETE massiva (righe filtrate) ---
 app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+  const idsPayload = req.body && req.body.ids;
+  const ids = Array.isArray(idsPayload) ? idsPayload.map(Number) : [];
   if (!ids.length || ids.some((n) => !Number.isFinite(n))) {
     return res.status(400).json({ error: "Elenco ID non valido." });
   }
@@ -1623,7 +1640,8 @@ app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
 
 // --- EXPORT CSV ---
 app.post("/api/export/csv", authMiddleware, async (req, res) => {
-  const rows = Array.isArray(req.body?.entries) ? req.body.entries : [];
+  const entriesPayload = req.body && req.body.entries;
+  const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
   const headers = [
     "Operatore",
     "Cantiere",
@@ -1644,19 +1662,19 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 
   for (const e of rows) {
     const line = [
-      e.operator ?? "",
-      e.cantiere ?? "",
-      e.macchina ?? "",
-      e.linea ?? "",
-      e.start_time ?? "",
-      e.end_time ?? "",
-      e.break_minutes ?? "",
-      (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
-      e.data ?? "",
-      e.start_location ?? e.location ?? "",
-      e.end_location ?? "",
-      (e.descrizione ?? "").replace(/\r?\n/g, " "),
-      e.id ?? "",
+      coalesce(e.operator, ""),
+      coalesce(e.cantiere, ""),
+      coalesce(e.macchina, ""),
+      coalesce(e.linea, ""),
+      coalesce(e.start_time, ""),
+      coalesce(e.end_time, ""),
+      coalesce(e.break_minutes, ""),
+      coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
+      coalesce(e.data, ""),
+      coalesce(coalesce(e.start_location, e.location), ""),
+      coalesce(e.end_location, ""),
+      coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
+      coalesce(e.id, ""),
     ]
       .map((v) => String(v).replace(/;/g, ","))
       .join(";");
@@ -1671,7 +1689,8 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 
 // --- EXPORT XLSX ---
 app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
-  const rows = Array.isArray(req.body?.entries) ? req.body.entries : [];
+  const entriesPayload = req.body && req.body.entries;
+  const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Report");
@@ -1703,19 +1722,19 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       geocodeCache
     );
     ws.addRow({
-      operator: e.operator ?? "",
-      cantiere: e.cantiere ?? "",
-      macchina: e.macchina ?? "",
-      linea: e.linea ?? "",
-      start_time: e.start_time ?? e.startTime ?? "",
-      end_time: e.end_time ?? e.endTime ?? "",
-      break_minutes: e.break_minutes ?? e.breakMinutes ?? "",
-      ore: (e.ore ?? "") !== "" ? Number(e.ore).toFixed(2) : "",
-      data: e.data ?? "",
+      operator: coalesce(e.operator, ""),
+      cantiere: coalesce(e.cantiere, ""),
+      macchina: coalesce(e.macchina, ""),
+      linea: coalesce(e.linea, ""),
+      start_time: coalesce(coalesce(e.start_time, e.startTime), ""),
+      end_time: coalesce(coalesce(e.end_time, e.endTime), ""),
+      break_minutes: coalesce(coalesce(e.break_minutes, e.breakMinutes), ""),
+      ore: coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
+      data: coalesce(e.data, ""),
       start_location: resolvedStartLocation,
       end_location: resolvedEndLocation,
-      descrizione: e.descrizione ?? "",
-      id: e.id ?? "",
+      descrizione: coalesce(e.descrizione, ""),
+      id: coalesce(e.id, ""),
     });
   }
   ws.getRow(1).font = { bold: true };
@@ -1738,17 +1757,16 @@ function listenOnPort(port) {
       .once("error", reject);
   });
 }
-
 async function startServerWithRetry() {
-  const targetPort = PREFERRED_PORT;
   let attempt = 0;
-
   while (true) {
+    const portToTry = useRandomPort ? 0 : PREFERRED_PORT;
+
     try {
-      const server = await listenOnPort(targetPort);
+      const server = await listenOnPort(portToTry);
       const addressInfo = server.address();
       const activePort =
-        typeof addressInfo === "object" && addressInfo?.port
+        typeof addressInfo === "object" && addressInfo && addressInfo.port
           ? addressInfo.port
           : targetPort;
       console.log(`Server attivo su http://localhost:${activePort}`);
@@ -1758,7 +1776,8 @@ async function startServerWithRetry() {
       });
       return server;
     } catch (err) {
-      if (err?.code !== "EADDRINUSE") {
+      const errorCode = err && err.code;
+      if (errorCode !== "EADDRINUSE") {
         throw err;
       }
 
@@ -1783,7 +1802,6 @@ async function startServerWithRetry() {
     }
   }
 }
-
 async function bootstrap() {
   await initializeDatabase();
   await ensureOptionSeed();
