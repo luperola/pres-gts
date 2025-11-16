@@ -55,15 +55,71 @@ function enforceUppercaseInput(input) {
   });
 }
 
+const credentialSyncState = {};
+
+function setCredentialSyncState(prefix, state) {
+  if (!prefix) return;
+  if (!state) {
+    delete credentialSyncState[prefix];
+    return;
+  }
+  credentialSyncState[prefix] = state;
+}
+
+function getCredentialSyncState(prefix) {
+  return credentialSyncState[prefix];
+}
+
+function normalizeHelperValue(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().toLocaleUpperCase("it-IT");
+}
+
+function splitFullName(value) {
+  const normalized = normalizeHelperValue(value);
+  if (!normalized) {
+    return { firstName: "", lastName: "" };
+  }
+  const parts = normalized.split(" ");
+  if (parts.length === 1) {
+    return { lastName: parts[0], firstName: "" };
+  }
+  return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
+}
+
 function updateCredentialHelperValue(prefix) {
+  if (getCredentialSyncState(prefix) === "helper") {
+    return;
+  }
   const firstInput = document.getElementById(`${prefix}FirstName`);
   const lastInput = document.getElementById(`${prefix}LastName`);
   const helperInput = document.getElementById(`${prefix}Username`);
   if (!helperInput) return;
+  setCredentialSyncState(prefix, "names");
   const parts = [];
   if (lastInput?.value) parts.push(lastInput.value.trim());
   if (firstInput?.value) parts.push(firstInput.value.trim());
-  helperInput.value = parts.join(" ").trim();
+  helperInput.value = normalizeHelperValue(parts.join(" "));
+  setCredentialSyncState(prefix, "");
+}
+
+function setInputValue(input, value) {
+  if (!input) return;
+  const nextValue = typeof value === "string" ? value : "";
+  if (input.value === nextValue) return;
+  input.value = nextValue;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function syncNamesFromCredentialHelper(prefix) {
+  const helperInput = document.getElementById(`${prefix}Username`);
+  if (!helperInput) return;
+  setCredentialSyncState(prefix, "helper");
+  const { firstName, lastName } = splitFullName(helperInput.value || "");
+  setInputValue(document.getElementById(`${prefix}LastName`), lastName);
+  setInputValue(document.getElementById(`${prefix}FirstName`), firstName);
+  setCredentialSyncState(prefix, "");
+  updateCredentialHelperValue(prefix);
 }
 
 function initCredentialHelpers(prefix) {
@@ -73,6 +129,15 @@ function initCredentialHelpers(prefix) {
     input.addEventListener("input", () => updateCredentialHelperValue(prefix));
     updateCredentialHelperValue(prefix);
   });
+  const helperInput = document.getElementById(`${prefix}Username`);
+  if (helperInput) {
+    ["input", "change"].forEach((eventName) => {
+      helperInput.addEventListener(eventName, () =>
+        syncNamesFromCredentialHelper(prefix)
+      );
+    });
+    syncNamesFromCredentialHelper(prefix);
+  }
 }
 
 function showFarewellMessageIfPresent() {
@@ -89,8 +154,10 @@ function showFarewellMessageIfPresent() {
 [
   "registerFirstName",
   "registerLastName",
+  "registerUsername",
   "loginFirstName",
   "loginLastName",
+  "loginUsername",
 ].forEach((id) => {
   const input = document.getElementById(id);
   enforceUppercaseInput(input);

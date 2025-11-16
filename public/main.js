@@ -616,21 +616,27 @@
       dom.macchinaSelect,
       dom.lineaSelect,
     ];
-    let valid = true;
+    let firstInvalid = null;
     selects.forEach((select) => {
       if (!select) return;
       const value = typeof select.value === "string" ? select.value.trim() : "";
       if (!value) {
         select.setCustomValidity("Compila questo campo");
-        valid = false;
+        if (!firstInvalid) {
+          firstInvalid = select;
+        }
       } else {
         select.setCustomValidity("");
       }
     });
-    if (!valid && dom.form) {
-      dom.form.reportValidity();
+    if (firstInvalid) {
+      firstInvalid.reportValidity();
+      if (typeof firstInvalid.focus === "function") {
+        firstInvalid.focus();
+      }
+      return false;
     }
-    return valid;
+    return true;
   }
 
   function clearSelectValidity(select) {
