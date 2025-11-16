@@ -1740,17 +1740,17 @@ function listenOnPort(port) {
 }
 
 async function startServerWithRetry() {
-  const maxAttempts = HAS_VALID_ENV_PORT ? 1 : 10;
-  let currentPort = PREFERRED_PORT;
+  const targetPort = PREFERRED_PORT;
+  let attempt = 0;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  while (true) {
     try {
-      const server = await listenOnPort(currentPort);
+      const server = await listenOnPort(targetPort);
       const addressInfo = server.address();
       const activePort =
         typeof addressInfo === "object" && addressInfo?.port
           ? addressInfo.port
-          : currentPort;
+          : targetPort;
       console.log(`Server attivo su http://localhost:${activePort}`);
       server.on("error", (err) => {
         console.error("Errore del server", err);
@@ -1762,21 +1762,26 @@ async function startServerWithRetry() {
         throw err;
       }
 
-      if (HAS_VALID_ENV_PORT || attempt === maxAttempts - 1) {
-        console.error(
-          `Porta ${currentPort} già in uso. Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta.`
-        );
+      console.error(
+        `Porta ${targetPort} già in uso. ${
+          HAS_VALID_ENV_PORT
+            ? "Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta."
+            : "Chiudi l'altra applicazione che la utilizza o attendi che si liberi."
+        }`
+      );
+
+      if (HAS_VALID_ENV_PORT) {
         throw err;
       }
-      const nextPort = currentPort + 1;
-      console.warn(
-        `Porta ${currentPort} occupata, provo automaticamente la porta ${nextPort}...`
+
+      attempt += 1;
+      const waitTimeMs = Math.min(1000 * attempt, 5000);
+      console.log(
+        `Riprovo automaticamente la porta ${targetPort} tra ${waitTimeMs}ms...`
       );
-      currentPort = nextPort;
+      await wait(waitTimeMs);
     }
   }
-
-  throw new Error("Impossibile trovare una porta libera");
 }
 
 async function bootstrap() {
