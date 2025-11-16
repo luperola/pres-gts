@@ -1730,10 +1730,21 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 initializeDatabase()
   .then(() => ensureOptionSeed())
   .then(() => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server attivo su http://localhost:${PORT}`);
     });
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `Porta ${PORT} già in uso. Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta.`
+        );
+      } else {
+        console.error("Errore del server", err);
+      }
+      process.exit(1);
+    });
   })
+
   .catch((err) => {
     console.error("Impossibile avviare il server", err);
     process.exit(1);
