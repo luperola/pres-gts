@@ -135,6 +135,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const INIT_SQL_PATH = path.join(__dirname, "sql", "init.sql");
 const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
+const OPERATORS_JSON = path.join(__dirname, "data", "operators.json");
 const ALLOWED_BREAK_MINUTES = new Set([0, 30, 60, 90]);
 const MINUTES_IN_DAY = 24 * 60;
 function coalesce(value, fallback) {
@@ -377,6 +378,16 @@ function normalizeOptionValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeOperatorKey(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .toLocaleLowerCase("it-IT")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
 function normalizePersonName(value) {
   if (typeof value !== "string") return "";
   return value.trim().replace(/\s+/g, " ");
@@ -401,6 +412,29 @@ function findOperatorMatch(operators, fullName) {
   );
 }
 
+let cachedCanonicalOperators = null;
+
+async function loadCanonicalOperators() {
+  if (cachedCanonicalOperators) return cachedCanonicalOperators;
+  let list = [];
+  try {
+    const raw = await fs.readFile(OPERATORS_JSON, "utf8");
+    const data = JSON.parse(raw);
+    list = Array.isArray(data?.operators)
+      ? data.operators
+          .map((name) => (typeof name === "string" ? name.trim() : ""))
+          .filter(Boolean)
+      : [];
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      console.warn("Impossibile leggere operators.json", err);
+    }
+  }
+  const map = new Map(list.map((name) => [normalizeOperatorKey(name), name]));
+  cachedCanonicalOperators = { list, map };
+  return cachedCanonicalOperators;
+}
+
 function buildLoginKey(firstName, lastName) {
   const fullName = buildFullName(firstName, lastName);
   return fullName ? fullName.toLowerCase() : "";
@@ -412,6 +446,7 @@ function sortOptionValues(values) {
 }
 
 async function fetchOptions() {
+  const { map: canonicalOperatorMap } = await loadCanonicalOperators();
   const initial = {
     operators: [],
     cantieri: [],
@@ -434,11 +469,19 @@ async function fetchOptions() {
   }
 
   for (const key of OPTION_CATEGORIES) {
-    initial[key] = sortOptionValues(
-      Array.from(
-        new Set(initial[key].map((v) => v.trim()).filter((v) => v.length > 0))
-      )
+    const values = Array.from(
+      new Set(initial[key].map((v) => v.trim()).filter((v) => v.length > 0))
     );
+    if (key === "operators" && canonicalOperatorMap.size) {
+      initial[key] = sortOptionValues(
+        values.map((value) => {
+          const normalized = normalizeOperatorKey(value);
+          return canonicalOperatorMap.get(normalized) || value;
+        })
+      );
+    } else {
+      initial[key] = sortOptionValues(values);
+    }
   }
 
   return initial;
@@ -469,7 +512,10 @@ async function ensureOptionSeed() {
     return;
   }
   try {
-    const operators = readOperatorsFromXlsx();
+    const { list: canonicalOperators } = await loadCanonicalOperators();
+    const operators = canonicalOperators.length
+      ? canonicalOperators
+      : readOperatorsFromXlsx();
     if (!operators.length) return;
     for (const name of operators) {
       await query(
