@@ -730,11 +730,8 @@ function calculateShiftDurationMinutes(startMinutes, endMinutes) {
   ) {
     return null;
   }
-  if (endMinutes === startMinutes) {
-    return null;
-  }
   let adjustedEnd = endMinutes;
-  if (endMinutes < startMinutes) {
+  if (endMinutes <= startMinutes) {
     adjustedEnd += MINUTES_IN_DAY;
   }
   const diff = adjustedEnd - startMinutes;
