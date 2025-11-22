@@ -103,9 +103,14 @@ app.use((err, req, res, next) => {
     "body" in err &&
     typeof req.rawBody === "string"
   ) {
-    const recovered = tryParseLooseJson(req.rawBody);
-    if (recovered) {
-      req.body = recovered;
+    const recoveredJson = tryParseLooseJson(req.rawBody);
+    if (recoveredJson) {
+      req.body = recoveredJson;
+      return next();
+    }
+    const recoveredObject = coerceBodyToObject(null, req.rawBody);
+    if (Object.keys(recoveredObject).length > 0) {
+      req.body = recoveredObject;
       return next();
     }
     return res.status(400).json({ error: "JSON non valido" });
