@@ -115,6 +115,12 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
    manualmente `Write-Output $json` o semplicemente `$json` per stampare la risposta JSON e verificare che il token sia stato
    creato correttamente.
 
+Se l'API risponde `{"error":"JSON non valido"}`, significa che il server non riesce a leggere il corpo come JSON. Controlla che:
+
+- Il server sia effettivamente in esecuzione su `http://localhost:3000` (in caso contrario potresti ricevere una pagina HTML o un 404).
+- La chiamata usi `curl.exe` con le virgolette dritte `"` e senza caratteri speciali aggiunti da PowerShell; per sicurezza puoi usare la forma a riga singola copiata sopra.
+- Le credenziali siano quelle di amministratore (`user: admin`, `pass: GTSTrack` a meno che non le abbia cambiate via variabili d'ambiente `ADMIN_USER`/`ADMIN_PASS`).
+
 4. **Interroga `/api/entries/search` usando il token ottenuto**:
 
    ```powershell

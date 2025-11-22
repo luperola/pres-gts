@@ -109,11 +109,8 @@ app.use((err, req, res, next) => {
       return next();
     }
     const recoveredObject = coerceBodyToObject(null, req.rawBody);
-    if (Object.keys(recoveredObject).length > 0) {
-      req.body = recoveredObject;
-      return next();
-    }
-    return res.status(400).json({ error: "JSON non valido" });
+    req.body = recoveredObject;
+    return next();
   }
   return next(err);
 });
