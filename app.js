@@ -1177,6 +1177,51 @@ app.post("/api/login-user", async (req, res) => {
   return res.json({ ok: true });
 });
 
+app.post("/api/reset-password", async (req, res) => {
+  const { password, firstName, lastName } = req.body || {};
+  const normalizedFirstName = normalizePersonName(firstName);
+  const normalizedLastName = normalizePersonName(lastName);
+  const loginKey = buildLoginKey(normalizedFirstName, normalizedLastName);
+  if (!loginKey || typeof password !== "string" || password.length < 6) {
+    return res.status(400).json({ error: "Dati non validi" });
+  }
+
+  const options = await fetchOptions();
+  const fullName = buildFullName(normalizedFirstName, normalizedLastName);
+  const matchedOperator = findOperatorMatch(options.operators || [], fullName);
+  if (!matchedOperator) {
+    return res.status(400).json({
+      error:
+        "Non è stato possibile associare il tuo nome a un operatore. Verifica di aver inserito nome e cognome corretti o contatta l'amministratore.",
+    });
+  }
+
+  const user = await findUserByLoginKey(loginKey);
+  if (!user) {
+    return res
+      .status(404)
+      .json({ error: "Nessun account trovato per i dati inseriti" });
+  }
+
+  const passwordHash = hashPassword(password);
+  try {
+    await updateUser({
+      id: user.id,
+      passwordHash,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      operatorName: matchedOperator.toUpperCase(),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: "Impossibile aggiornare la password. Riprova più tardi.",
+    });
+  }
+
+  issueUserToken(res, user.id);
+  return res.json({ ok: true, reset: true });
+});
+
 app.post("/api/logout-user", async (req, res) => {
   const token = getUserTokenFromReq(req);
   clearUserToken(res, token);
