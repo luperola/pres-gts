@@ -113,7 +113,8 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
 
    L'endpoint risponde con un oggetto del tipo `{"token":"<32 caratteri esadecimali>"}`. Se non vedi alcun output, esegui
    manualmente `Write-Output $json` o semplicemente `$json` per stampare la risposta JSON e verificare che il token sia stato
-   creato correttamente.
+   creato correttamente. Username e password vengono confrontati in modo case-insensitive e vengono ignorati spazi iniziali/finali,
+   quindi il login funziona anche se PowerShell inserisce accidentalmente uno spazio intorno alle credenziali.
 
 Se l'API risponde `{"error":"JSON non valido"}`, significa che il server non riesce a leggere il corpo come JSON. Controlla che:
 

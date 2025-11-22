@@ -1082,7 +1082,13 @@ async function userAuthMiddleware(req, res, next) {
 // --- LOGIN ---
 app.post("/api/login", async (req, res) => {
   const { user, pass } = extractCredentials(req);
-  if (user === ADMIN_USER && pass === ADMIN_PASS) {
+  const normalizedUser =
+    typeof user === "string" ? user.trim().toLowerCase() : "";
+  const normalizedPass = typeof pass === "string" ? pass.trim() : "";
+  const expectedUser = ADMIN_USER.trim().toLowerCase();
+  const expectedPass = ADMIN_PASS.trim();
+
+  if (normalizedUser === expectedUser && normalizedPass === expectedPass) {
     const token = crypto.randomBytes(16).toString("hex");
     validTokens.add(token);
     return res.json({ token });
