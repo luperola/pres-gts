@@ -92,10 +92,10 @@ Quando lavori in PowerShell è consigliabile usare `curl.exe` (per evitare l'ali
 3. **Ottieni un token admin** da una seconda finestra PowerShell:
 
    ```powershell
-    $response = curl.exe -s -X POST http://localhost:3000/api/login
-    -H "Content-Type: application/json" `
-    -d '{"user":"admin","pass":"GTSTrack"}'
-    $json = $response | ConvertFrom-Json
+    $response = curl.exe -s -X POST http://localhost:3000/api/login `
+     -H "Content-Type: application/json" `
+     -d '{"user":"admin","pass":"GTSTrack"}'
+   $json = $response | ConvertFrom-Json
    $token = $json.token
    $json
    ```
