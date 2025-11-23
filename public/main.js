@@ -592,6 +592,10 @@
     if (!dom.form || state.activeEntry) return;
     clearAlert();
     if (!validateRequiredSelects()) {
+      showAlert(
+        "danger",
+        "Seleziona Cantiere, Macchina e Linea prima di iniziare il lavoro."
+      );
       return;
     }
     const startTime = getCurrentTimeString();
