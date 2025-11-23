@@ -361,16 +361,7 @@
 
   function updateStartButtonState() {
     if (!dom.startBtn) return;
-    const requiredValues = [
-      dom.operatorSelect?.value,
-      dom.cantiereSelect?.value,
-      dom.macchinaSelect?.value,
-      dom.lineaSelect?.value,
-    ];
-    const canStart = requiredValues.every(
-      (value) => typeof value === "string" && value.trim().length > 0
-    );
-    dom.startBtn.disabled = !canStart || Boolean(state.activeEntry);
+    dom.startBtn.disabled = Boolean(state.activeEntry);
   }
 
   function updateEndButtonState() {
@@ -592,10 +583,10 @@
     if (!dom.form || state.activeEntry) return;
     clearAlert();
     if (!validateRequiredSelects()) {
-      showAlert(
-        "danger",
+      /*  showAlert(
+        "danger"
         "Seleziona Cantiere, Macchina e Linea prima di iniziare il lavoro."
-      );
+      ); */
       return;
     }
     const startTime = getCurrentTimeString();
@@ -623,8 +614,7 @@
     let firstInvalid = null;
     selects.forEach((select) => {
       if (!select) return;
-      const value = typeof select.value === "string" ? select.value.trim() : "";
-      if (!value) {
+      if (!isSelectCompleted(select)) {
         select.setCustomValidity("Compila questo campo");
         if (!firstInvalid) {
           firstInvalid = select;
@@ -641,6 +631,13 @@
       return false;
     }
     return true;
+  }
+
+  function isSelectCompleted(select) {
+    const value = typeof select?.value === "string" ? select.value.trim() : "";
+    const selectedOption = select?.options?.[select.selectedIndex];
+    const isPlaceholder = selectedOption?.dataset?.placeholder === "true";
+    return Boolean(value) && !isPlaceholder;
   }
 
   function clearSelectValidity(select) {
