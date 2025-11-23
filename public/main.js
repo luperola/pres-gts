@@ -559,6 +559,11 @@
     { previousEntry = null, pendingFinish = null } = {}
   ) {
     const sanitize = (value) => (typeof value === "string" ? value.trim() : "");
+    const entryId = Number.isFinite(Number(entry?.id))
+      ? Number(entry.id)
+      : Number.isFinite(Number(previousEntry?.id))
+      ? Number(previousEntry.id)
+      : null;
     const oreValue = Number(entry?.ore);
     let hoursLabel = "";
     if (Number.isFinite(oreValue)) {
@@ -576,6 +581,7 @@
       macchina: sanitize(entry?.macchina) || sanitize(fallback.macchina),
       operator: sanitize(entry?.operator) || sanitize(fallback.operator),
       workDate: sanitize(entry?.data) || sanitize(fallback.data),
+      entryId,
     };
   }
 

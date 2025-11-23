@@ -144,6 +144,16 @@ function coalesce(value, fallback) {
   return value !== undefined && value !== null ? value : fallback;
 }
 
+function appendCommentToDescription(current, comment) {
+  const base = typeof current === "string" ? current.trim() : "";
+  const trimmedComment = typeof comment === "string" ? comment.trim() : "";
+  if (!trimmedComment) return base;
+  const prefixedComment = `-- Commento: ${trimmedComment}`;
+  if (!base) return prefixedComment;
+  if (base.includes(prefixedComment)) return base;
+  return `${base}\n${prefixedComment}`;
+}
+
 function extractClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   const rawIp = Array.isArray(forwarded)
@@ -1577,6 +1587,51 @@ app.post("/api/entry/finish", async (req, res) => {
       return res
         .status(500)
         .json({ error: "Impossibile aggiornare il turno." });
+    }
+
+    res.json({ ok: true, entry: updated });
+  } catch (err) {
+    const message =
+      err instanceof Error && err.message ? err.message : "Errore salvataggio.";
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/entry/comment", async (req, res) => {
+  try {
+    const { entryId: entryIdRaw, comment } = req.body || {};
+    const entryId = Number(entryIdRaw);
+    if (!Number.isFinite(entryId) || entryId <= 0) {
+      return res.status(400).json({ error: "ID turno non valido." });
+    }
+
+    const trimmedComment = typeof comment === "string" ? comment.trim() : "";
+    if (!trimmedComment) {
+      return res.status(400).json({ error: "Commento non valido." });
+    }
+
+    const entry = await fetchEntryById(entryId);
+    if (!entry) {
+      return res.status(404).json({ error: "Turno non trovato." });
+    }
+
+    const descrizioneAggiornata = appendCommentToDescription(
+      entry.descrizione,
+      trimmedComment
+    );
+    const { rows } = await query(
+      `UPDATE entries
+       SET descrizione = $2
+       WHERE id = $1
+       RETURNING id, descrizione`,
+      [entryId, descrizioneAggiornata]
+    );
+
+    const updated = rows[0];
+    if (!updated) {
+      return res
+        .status(500)
+        .json({ error: "Impossibile aggiornare il commento." });
     }
 
     res.json({ ok: true, entry: updated });

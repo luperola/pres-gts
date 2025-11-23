@@ -82,7 +82,27 @@ const SUMMARY_MAX_AGE = 15 * 60 * 1000; // 15 minuti
     dom.validateBtn.disabled = true;
     updateStatus("Validazione in corso...");
     const comment = dom.comment?.value.trim();
+    const entryId = summaryData?.entryId;
     if (comment) {
+      if (entryId) {
+        updateStatus("Registrazione del commento...");
+        try {
+          const res = await fetch("/api/entry/comment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entryId, comment }),
+          });
+          if (!res.ok) {
+            console.warn("Commento non salvato", res.status, await res.text());
+          }
+        } catch (err) {
+          console.warn("Errore durante il salvataggio del commento", err);
+        }
+      } else {
+        console.warn(
+          "Impossibile associare il commento: ID turno non disponibile"
+        );
+      }
       console.info("Commento utente registrato localmente", comment);
     }
     try {
