@@ -73,7 +73,15 @@ const SUMMARY_MAX_AGE = 15 * 60 * 1000; // 15 minuti
       parts.push(`in data ${data.workDate}`);
     }
     dom.text.textContent = parts.join(", ") + ".";
-    dom.error.classList.add("d-none");
+    if (data.durationWarning) {
+      dom.error.textContent =
+        data.durationWarningReason ||
+        "Attenzione: l'intervallo tra inizio e fine supera o eguaglia le 24 ore. Le ore sono state azzerate: inserisci un messaggio se necessario.";
+      dom.error.classList.remove("d-none");
+    } else {
+      dom.error.textContent = "";
+      dom.error.classList.add("d-none");
+    }
   }
 
   async function handleValidateClick(event) {

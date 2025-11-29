@@ -742,11 +742,17 @@ function calculateShiftDurationMinutes(startMinutes, endMinutes) {
   ) {
     return null;
   }
+  if (endMinutes === startMinutes) {
+    return 0;
+  }
   let adjustedEnd = endMinutes;
   if (endMinutes <= startMinutes) {
     adjustedEnd += MINUTES_IN_DAY;
   }
   const diff = adjustedEnd - startMinutes;
+  if (diff >= MINUTES_IN_DAY) {
+    return MINUTES_IN_DAY;
+  }
   return diff > 0 ? diff : null;
 }
 
@@ -1513,7 +1519,8 @@ app.post("/api/entry/finish", async (req, res) => {
         .json({ error: "Seleziona un tempo pausa valido." });
     }
 
-    const elapsedMinutes = calculateShiftDurationMinutes(
+    const isSameTime = endMinutes === startMinutes;
+    let elapsedMinutes = calculateShiftDurationMinutes(
       startMinutes,
       endMinutes
     );
@@ -1523,8 +1530,11 @@ app.post("/api/entry/finish", async (req, res) => {
       });
     }
 
-    const workedMinutes = elapsedMinutes - parsedBreak;
-    if (workedMinutes <= 0) {
+    const durationWarning = isSameTime || elapsedMinutes >= MINUTES_IN_DAY;
+    const normalizedElapsed = durationWarning ? 0 : elapsedMinutes;
+
+    const workedMinutes = normalizedElapsed - parsedBreak;
+    if (workedMinutes < 0) {
       return res.status(400).json({
         error: "La durata del lavoro deve essere positiva.",
       });
@@ -1589,7 +1599,7 @@ app.post("/api/entry/finish", async (req, res) => {
         .json({ error: "Impossibile aggiornare il turno." });
     }
 
-    res.json({ ok: true, entry: updated });
+    res.json({ ok: true, entry: updated, durationWarning });
   } catch (err) {
     const message =
       err instanceof Error && err.message ? err.message : "Errore salvataggio.";

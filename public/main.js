@@ -820,19 +820,32 @@
         return;
       }
       const entry = data?.entry || null;
+      const durationWarning = Boolean(data?.durationWarning);
       const previousEntry = state.activeEntry;
       const pendingFinishSnapshot = state.pendingFinish;
       const summaryPayload = buildWorkSummaryPayload(entry, {
         previousEntry,
         pendingFinish: pendingFinishSnapshot,
       });
+      summaryPayload.durationWarning = durationWarning;
+      if (durationWarning) {
+        summaryPayload.durationWarningReason =
+          "Durata del turno superiore o uguale a 24 ore. Ore registrate a 0.";
+      }
       const oreWorked = summaryPayload.hoursLabel;
-      showAlert(
-        "success",
-        oreWorked
-          ? `Fine lavoro registrata. Ore lavorate: ${oreWorked}`
-          : "Fine lavoro registrata."
-      );
+      if (durationWarning) {
+        showAlert(
+          "warning",
+          "Attenzione: durata turno pari o superiore a 24 ore. Ore registrate a 0. Aggiungi un messaggio nel riepilogo finale se necessario."
+        );
+      } else {
+        showAlert(
+          "success",
+          oreWorked
+            ? `Fine lavoro registrata. Ore lavorate: ${oreWorked}`
+            : "Fine lavoro registrata."
+        );
+      }
       resetFormFields();
       setLocation(state.cachedLocation);
       clearPendingFinish();

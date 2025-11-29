@@ -214,26 +214,6 @@ async function deleteFiltered() {
   await search();
 }
 
-// Export CSV/XLSX basati su risultati correnti
-async function exportCsv() {
-  const entries = window.__lastEntries || [];
-  const res = await fetch("/api/export/csv", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + TOKEN,
-    },
-    body: JSON.stringify({ entries }),
-  });
-  if (!res.ok) {
-    const out = await safeJson(res);
-    $("loginMsg").textContent = out?.error || "Errore export CSV";
-    return;
-  }
-  const blob = await res.blob();
-  downloadBlob(blob, "report.csv");
-}
-
 async function exportXlsx() {
   const entries = window.__lastEntries || [];
   setExportLoading(true);
@@ -343,9 +323,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
   // Export
-  const btnCsv = $("btnCsv");
-  if (btnCsv) btnCsv.addEventListener("click", exportCsv);
-
   const btnXlsx = $("btnXlsx");
   if (btnXlsx) btnXlsx.addEventListener("click", exportXlsx);
 
