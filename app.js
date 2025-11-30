@@ -1519,7 +1519,6 @@ app.post("/api/entry/finish", async (req, res) => {
         .json({ error: "Seleziona un tempo pausa valido." });
     }
 
-    const isSameTime = endMinutes === startMinutes;
     let elapsedMinutes = calculateShiftDurationMinutes(
       startMinutes,
       endMinutes
@@ -1530,7 +1529,7 @@ app.post("/api/entry/finish", async (req, res) => {
       });
     }
 
-    const durationWarning = isSameTime || elapsedMinutes >= MINUTES_IN_DAY;
+    const durationWarning = elapsedMinutes >= MINUTES_IN_DAY;
     const normalizedElapsed = durationWarning ? 0 : elapsedMinutes;
 
     const workedMinutes = normalizedElapsed - parsedBreak;
