@@ -139,6 +139,7 @@ const OPTION_CATEGORIES = ["operators", "cantieri", "macchine", "linee"];
 const OPERATORS_XLSX = path.join(__dirname, "data", "operators.xlsx");
 const OPERATORS_JSON = path.join(__dirname, "data", "operators.json");
 const ALLOWED_BREAK_MINUTES = new Set([0, 30, 60, 90]);
+const ALLOWED_TRANSFER_MINUTES = ALLOWED_BREAK_MINUTES;
 const MINUTES_IN_DAY = 24 * 60;
 function coalesce(value, fallback) {
   return value !== undefined && value !== null ? value : fallback;
@@ -770,6 +771,7 @@ async function createEntryInDb(entry, req) {
     startTime = null,
     endTime = null,
     breakMinutes = null,
+    transferMinutes = null,
     startLocation = null,
     endLocation = null,
   } = entry;
@@ -815,6 +817,13 @@ async function createEntryInDb(entry, req) {
   const normalizedBreak = Number.isFinite(breakValueRaw)
     ? Number(breakValueRaw)
     : null;
+  const transferValueRaw =
+    transferMinutes === undefined || transferMinutes === null
+      ? null
+      : Number(transferMinutes);
+  const normalizedTransfer = Number.isFinite(transferValueRaw)
+    ? Number(transferValueRaw)
+    : null;
 
   if (startTime && !normalizedStart) {
     throw new Error("Ora inizio non valida (usa HH:MM).");
@@ -837,10 +846,11 @@ async function createEntryInDb(entry, req) {
        start_time,
        end_time,
        break_minutes,
+       transfer_minutes,
        start_location,
        end_location
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING id,
                operator,
                cantiere,
@@ -853,6 +863,7 @@ async function createEntryInDb(entry, req) {
                start_time,
                end_time,
                break_minutes::int AS break_minutes,
+               transfer_minutes::int AS transfer_minutes,
                start_location,
                end_location`,
 
@@ -869,6 +880,7 @@ async function createEntryInDb(entry, req) {
       normalizedStart,
       normalizedEnd,
       normalizedBreak,
+      normalizedTransfer,
       normalizedStartLocation || null,
       normalizedEndLocation || null,
     ]
@@ -939,6 +951,7 @@ async function searchEntriesInDb(filters = {}) {
             start_time,
             end_time,
             break_minutes::int AS break_minutes,
+            transfer_minutes::int AS transfer_minutes,
             start_location,
             end_location
      FROM entries
@@ -989,6 +1002,7 @@ async function findOpenEntryForOperator(operator) {
             start_time,
             end_time,
             break_minutes::int AS break_minutes,
+              transfer_minutes::int AS transfer_minutes,
             start_location,
             end_location
      FROM entries
@@ -1468,6 +1482,7 @@ app.post("/api/entry/finish", async (req, res) => {
       endTime,
       breakMinutes,
       location: endLocationRaw,
+      transferMinutes,
       descrizione,
     } = req.body || {};
 
@@ -1519,6 +1534,19 @@ app.post("/api/entry/finish", async (req, res) => {
         .json({ error: "Seleziona un tempo pausa valido." });
     }
 
+    const parsedTransfer =
+      transferMinutes === undefined || transferMinutes === null
+        ? 0
+        : Number(transferMinutes);
+    if (
+      !Number.isFinite(parsedTransfer) ||
+      !ALLOWED_TRANSFER_MINUTES.has(parsedTransfer)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Seleziona un tempo trasferimento valido." });
+    }
+
     let elapsedMinutes = calculateShiftDurationMinutes(
       startMinutes,
       endMinutes
@@ -1532,7 +1560,7 @@ app.post("/api/entry/finish", async (req, res) => {
     const durationWarning = elapsedMinutes >= MINUTES_IN_DAY;
     const normalizedElapsed = durationWarning ? 0 : elapsedMinutes;
 
-    const workedMinutes = normalizedElapsed - parsedBreak;
+    const workedMinutes = normalizedElapsed - parsedBreak - parsedTransfer;
     if (workedMinutes < 0) {
       return res.status(400).json({
         error: "La durata del lavoro deve essere positiva.",
@@ -1562,10 +1590,11 @@ app.post("/api/entry/finish", async (req, res) => {
       `UPDATE entries
        SET end_time = $2,
            break_minutes = $3,
-           ore = $4,
-           descrizione = $5,
-           end_location = $6,
-           location = COALESCE(location, start_location, $6)
+            transfer_minutes = $4,
+           ore = $5,
+           descrizione = $6,
+           end_location = $7,
+           location = COALESCE(location, start_location, $7)
        WHERE id = $1
        RETURNING id,
                  operator,
@@ -1579,12 +1608,14 @@ app.post("/api/entry/finish", async (req, res) => {
                  start_time,
                  end_time,
                  break_minutes::int AS break_minutes,
+                 transfer_minutes::int AS transfer_minutes,
                  start_location,
                  end_location`,
       [
         entryId,
         normalizedEnd,
         parsedBreak,
+        parsedTransfer,
         ore,
         sanitizedDescrizione,
         normalizedEndLocation || null,
@@ -1661,6 +1692,7 @@ app.post("/api/entry", async (req, res) => {
       startTime,
       endTime,
       breakMinutes,
+      transferMinutes,
       descrizione,
       location: locationFromBody,
     } = req.body || {};
@@ -1703,8 +1735,20 @@ app.post("/api/entry", async (req, res) => {
         .status(400)
         .json({ error: "Seleziona un tempo pausa valido." });
     }
+    const parsedTransfer =
+      transferMinutes === undefined || transferMinutes === null
+        ? 0
+        : Number(transferMinutes);
+    if (
+      !Number.isFinite(parsedTransfer) ||
+      !ALLOWED_TRANSFER_MINUTES.has(parsedTransfer)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Seleziona un tempo trasferimento valido." });
+    }
     // ore numerico
-    const workedMinutes = elapsedMinutes - parsedBreak;
+    const workedMinutes = elapsedMinutes - parsedBreak - parsedTransfer;
     if (workedMinutes <= 0) {
       return res
         .status(400)
@@ -1736,6 +1780,7 @@ app.post("/api/entry", async (req, res) => {
         startTime,
         endTime,
         breakMinutes: parsedBreak,
+        transferMinutes: parsedTransfer,
         startLocation: locationFromBody,
         endLocation: locationFromBody,
       },
@@ -1810,6 +1855,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
     "Ora inizio",
     "Ora fine",
     "Pausa (min)",
+    "Trasferimento (min)",
     "Ore",
     "Data",
     "Geo inizio",
@@ -1829,6 +1875,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       coalesce(e.start_time, ""),
       coalesce(e.end_time, ""),
       coalesce(e.break_minutes, ""),
+      coalesce(e.transfer_minutes, ""),
       coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
       coalesce(e.data, ""),
       coalesce(coalesce(e.start_location, e.location), ""),
@@ -1863,6 +1910,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "Ora inizio", key: "start_time", width: 12 },
     { header: "Ora fine", key: "end_time", width: 12 },
     { header: "Pausa (min)", key: "break_minutes", width: 12 },
+    { header: "Trasferimento", key: "transfer_minutes", width: 14 },
     { header: "Ore", key: "ore", width: 10 },
     { header: "Data", key: "data", width: 14 },
     { header: "Geo inizio", key: "start_location", width: 26 },
@@ -1889,6 +1937,10 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       start_time: coalesce(coalesce(e.start_time, e.startTime), ""),
       end_time: coalesce(coalesce(e.end_time, e.endTime), ""),
       break_minutes: coalesce(coalesce(e.break_minutes, e.breakMinutes), ""),
+      transfer_minutes: coalesce(
+        coalesce(e.transfer_minutes, e.transferMinutes),
+        ""
+      ),
       ore: coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
       data: coalesce(e.data, ""),
       start_location: resolvedStartLocation,

@@ -37,6 +37,7 @@
     dom.macchinaSelect = document.getElementById("macchina");
     dom.lineaSelect = document.getElementById("linea");
     dom.breakSelect = document.getElementById("pausa");
+    dom.transferSelect = document.getElementById("trasferimento");
     dom.breakWrapper = document.getElementById("breakWrapper");
     dom.pauseReminder = document.getElementById("pauseReminder");
     dom.startBtn = document.getElementById("startWorkBtn");
@@ -76,6 +77,16 @@
     if (dom.breakSelect) {
       dom.breakSelect.addEventListener("change", () => {
         clearSelectValidity(dom.breakSelect);
+        if (state.pendingFinish) {
+          clearPendingFinish();
+        }
+        updateEndButtonState();
+      });
+    }
+
+    if (dom.transferSelect) {
+      dom.transferSelect.addEventListener("change", () => {
+        clearSelectValidity(dom.transferSelect);
         if (state.pendingFinish) {
           clearPendingFinish();
         }
@@ -330,6 +341,7 @@
     selectPlaceholderOption(dom.macchinaSelect);
     selectPlaceholderOption(dom.lineaSelect);
     selectPlaceholderOption(dom.breakSelect);
+    selectPlaceholderOption(dom.transferSelect);
     if (dom.descrizioneInput) {
       dom.descrizioneInput.value = "";
     }
@@ -367,10 +379,9 @@
   function updateEndButtonState() {
     if (!dom.endBtn) return;
     const hasEntry = Boolean(state.activeEntry);
-    const pauseValue = dom.breakSelect?.value ?? "";
-    const pauseSelected =
-      typeof pauseValue === "string" && pauseValue.trim() !== "";
-    dom.endBtn.disabled = !hasEntry || !pauseSelected;
+    const pauseSelected = isSelectCompleted(dom.breakSelect);
+    const transferSelected = isSelectCompleted(dom.transferSelect);
+    dom.endBtn.disabled = !hasEntry || !pauseSelected || !transferSelected;
   }
 
   function updateUiForEntry(entry) {
@@ -423,6 +434,9 @@
 
     if (!hasEntry && dom.breakSelect) {
       selectPlaceholderOption(dom.breakSelect);
+    }
+    if (!hasEntry && dom.transferSelect) {
+      selectPlaceholderOption(dom.transferSelect);
     }
 
     if (hasEntry && state.activeEntry.start_time) {
@@ -482,6 +496,16 @@
         dom.breakSelect.value = String(entry.break_minutes);
       } else {
         selectPlaceholderOption(dom.breakSelect);
+      }
+    }
+    if (dom.transferSelect) {
+      if (
+        entry?.transfer_minutes !== undefined &&
+        entry.transfer_minutes !== null
+      ) {
+        dom.transferSelect.value = String(entry.transfer_minutes);
+      } else {
+        selectPlaceholderOption(dom.transferSelect);
       }
     }
   }
@@ -740,9 +764,22 @@
       );
       return;
     }
+    const transferValueRaw = dom.transferSelect?.value ?? "";
+    if (typeof transferValueRaw !== "string" || !transferValueRaw.trim()) {
+      showAlert(
+        "danger",
+        "Seleziona la durata del trasferimento prima di proseguire."
+      );
+      return;
+    }
     const breakMinutes = Number(breakValueRaw);
     if (!Number.isFinite(breakMinutes)) {
       showAlert("danger", "Seleziona un valore di pausa valido.");
+      return;
+    }
+    const transferMinutes = Number(transferValueRaw);
+    if (!Number.isFinite(transferMinutes)) {
+      showAlert("danger", "Seleziona un valore di trasferimento valido.");
       return;
     }
 
@@ -757,22 +794,28 @@
       if (workedMinutes < 0) {
         workedMinutes += 24 * 60;
       }
-      workedMinutes = Math.max(0, workedMinutes - breakMinutes);
+      workedMinutes = Math.max(
+        0,
+        workedMinutes - breakMinutes - transferMinutes
+      );
       oreLavorateLabel = formatMinutesToReadableTime(workedMinutes);
     }
     const pausaLabel = formatMinutesToReadableTime(breakMinutes);
+    const transferLabel = formatMinutesToReadableTime(transferMinutes);
     if (dom.finishSummary) {
       const parts = [];
       if (oreLavorateLabel) {
         parts.push(`Ore lavorate: ${oreLavorateLabel}`);
       }
       parts.push(`Pausa: ${pausaLabel}`);
+      parts.push(`Trasferimento: ${transferLabel}`);
       dom.finishSummary.textContent = parts.join(" • ");
       dom.finishSummary.classList.remove("d-none");
     }
     state.pendingFinish = {
       endTime,
       breakMinutes,
+      transferMinutes,
       descrizione: descrizioneValue,
       workedMinutes,
     };
@@ -794,6 +837,7 @@
       entryId: state.activeEntry.id,
       endTime: state.pendingFinish.endTime,
       breakMinutes: state.pendingFinish.breakMinutes,
+      transferMinutes: state.pendingFinish.transferMinutes,
       descrizione:
         dom.descrizioneInput?.value.trim() ??
         state.pendingFinish.descrizione ??

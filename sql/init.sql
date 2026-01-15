@@ -22,6 +22,9 @@ ALTER TABLE entries
   ADD COLUMN IF NOT EXISTS break_minutes INTEGER;
 
 ALTER TABLE entries
+  ADD COLUMN IF NOT EXISTS transfer_minutes INTEGER;
+  
+ALTER TABLE entries
   ADD COLUMN IF NOT EXISTS start_location TEXT;
 
 ALTER TABLE entries

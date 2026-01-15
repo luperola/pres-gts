@@ -98,6 +98,10 @@ function renderTable(entries) {
       e.break_minutes !== undefined && e.break_minutes !== null
         ? e.break_minutes
         : "";
+    const transferLabel =
+      e.transfer_minutes !== undefined && e.transfer_minutes !== null
+        ? e.transfer_minutes
+        : "";
     tr.innerHTML = `
      <td class="text-nowrap">${e.operator ?? ""}</td>
       <td class="text-nowrap">${e.cantiere ?? ""}</td>
@@ -106,6 +110,7 @@ function renderTable(entries) {
       <td class="text-nowrap">${e.start_time ?? ""}</td>
       <td class="text-nowrap">${e.end_time ?? ""}</td>
       <td class="text-nowrap">${breakLabel}</td>
+       <td class="text-nowrap">${transferLabel}</td>
       <td class="text-nowrap">${oreLabel}</td>
            <td class="text-nowrap">${e.data ?? ""}</td>
       <td class="text-break">${e.descrizione ?? ""}</td>

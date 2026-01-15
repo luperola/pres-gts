@@ -105,12 +105,24 @@
                     <option value="90">1 ora e 30 minuti</option>
                   </select>
                 </div>
+                <div class="col-md-3">
+                  <label class="form-label">Trasferimento</label>
+                  <select id="trasferimento" class="form-select">
+                    <option value="" selected disabled data-placeholder="true">
+                      Seleziona trasferimento
+                    </option>
+                    <option value="0">Nessun trasferimento</option>
+                    <option value="30">30 minuti</option>
+                    <option value="60">1 ora</option>
+                    <option value="90">1 ora e 30 minuti</option>
+                  </select>
+                </div>
               </div>
               <p
                 id="pauseReminder"
                 class="text-primary fw-semibold mt-3 mb-2 d-none"
               >
-                Selezionare la pausa prima di terminare il turno
+                Selezionare pausa e/o trasferimento prima di terminare il turno
               </p>
               <div class="d-flex flex-wrap align-items-center gap-2">
                 <button
