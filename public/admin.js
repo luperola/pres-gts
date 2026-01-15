@@ -90,28 +90,13 @@ function renderTable(entries) {
 
   for (const e of entries) {
     const tr = document.createElement("tr");
-    const oreValue =
-      e.ore !== undefined && e.ore !== null ? Number(e.ore) : null;
-    const oreLabel =
-      oreValue !== null && !Number.isNaN(oreValue) ? oreValue.toFixed(2) : "";
-    const breakLabel =
-      e.break_minutes !== undefined && e.break_minutes !== null
-        ? e.break_minutes
-        : "";
-    const transferLabel =
-      e.transfer_minutes !== undefined && e.transfer_minutes !== null
-        ? e.transfer_minutes
-        : "";
     tr.innerHTML = `
      <td class="text-nowrap">${e.operator ?? ""}</td>
       <td class="text-nowrap">${e.cantiere ?? ""}</td>
       <td class="text-nowrap">${e.macchina ?? ""}</td>
       <td class="text-nowrap">${e.linea ?? ""}</td>
       <td class="text-nowrap">${e.start_time ?? ""}</td>
-      <td class="text-nowrap">${e.end_time ?? ""}</td>
-      <td class="text-nowrap">${breakLabel}</td>
-       <td class="text-nowrap">${transferLabel}</td>
-      <td class="text-nowrap">${oreLabel}</td>
+      <td class="text-nowrap">${e.end_time ?? ""}</td>     
            <td class="text-nowrap">${e.data ?? ""}</td>
       <td class="text-break">${e.descrizione ?? ""}</td>
       <td>
