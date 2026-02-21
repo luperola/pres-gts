@@ -1899,11 +1899,11 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   const entriesPayload = req.body && req.body.entries;
   const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
 
-  const formatOreItaliane = (oreValue) => {
+  const normalizeOreValue = (oreValue) => {
     if (coalesce(oreValue, "") === "") return "";
     const oreNumber = Number(oreValue);
     if (!Number.isFinite(oreNumber)) return "";
-    return oreNumber.toFixed(2).replace(".", ",");
+   return Number(oreNumber.toFixed(2));
   };
 
   const formatOreEffettive = (oreValue) => {
@@ -1963,7 +1963,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
         coalesce(e.transfer_minutes, e.transferMinutes),
         "",
       ),
-      ore: formatOreItaliane(e.ore),
+      ore: normalizeOreValue(e.ore),
       data: coalesce(e.data, ""),
       start_location: resolvedStartLocation,
       end_location: resolvedEndLocation,
@@ -1973,6 +1973,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     });
   }
   ws.getRow(1).font = { bold: true };
+   ws.getColumn("ore").numFmt = "0.00";
 
   const buf = await wb.xlsx.writeBuffer();
   res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
