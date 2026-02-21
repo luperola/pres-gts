@@ -41,8 +41,8 @@ function coerceBodyToObject(body, rawBody) {
     typeof body === "string" && body.trim()
       ? body.trim()
       : typeof rawBody === "string" && rawBody.trim()
-      ? rawBody.trim()
-      : "";
+        ? rawBody.trim()
+        : "";
 
   if (!candidateString) {
     return {};
@@ -75,14 +75,14 @@ function extractCredentials(req) {
     typeof normalizedBody.user === "string"
       ? normalizedBody.user
       : typeof normalizedBody.username === "string"
-      ? normalizedBody.username
-      : "";
+        ? normalizedBody.username
+        : "";
   const pass =
     typeof normalizedBody.pass === "string"
       ? normalizedBody.pass
       : typeof normalizedBody.password === "string"
-      ? normalizedBody.password
-      : "";
+        ? normalizedBody.password
+        : "";
   return { user, pass };
 }
 
@@ -93,7 +93,7 @@ app.use(
     verify: (req, res, buf, encoding) => {
       req.rawBody = buf.toString(encoding || "utf8");
     },
-  })
+  }),
 );
 app.use(express.urlencoded({ extended: true }));
 app.use((err, req, res, next) => {
@@ -160,8 +160,8 @@ function extractClientIp(req) {
   const rawIp = Array.isArray(forwarded)
     ? forwarded[0]
     : typeof forwarded === "string"
-    ? forwarded.split(",")[0]
-    : req.socket && req.socket.remoteAddress;
+      ? forwarded.split(",")[0]
+      : req.socket && req.socket.remoteAddress;
   if (!rawIp) return null;
   const ip = rawIp.replace(/^::ffff:/, "").trim();
   if (!ip) return null;
@@ -360,14 +360,14 @@ async function resolveLocationFromRequest(req) {
         typeof data.city === "string" && data.city.trim()
           ? data.city.trim()
           : typeof data.town === "string" && data.town.trim()
-          ? data.town.trim()
-          : null;
+            ? data.town.trim()
+            : null;
       const region =
         typeof data.region === "string" && data.region.trim()
           ? data.region.trim()
           : typeof data.state_prov === "string" && data.state_prov.trim()
-          ? data.state_prov.trim()
-          : null;
+            ? data.state_prov.trim()
+            : null;
       const country =
         typeof data.country_name === "string" && data.country_name.trim()
           ? data.country_name.trim()
@@ -454,7 +454,7 @@ function buildLoginKey(firstName, lastName) {
 }
 function sortOptionValues(values) {
   return values.sort((a, b) =>
-    a.localeCompare(b, "it", { sensitivity: "base", ignorePunctuation: true })
+    a.localeCompare(b, "it", { sensitivity: "base", ignorePunctuation: true }),
   );
 }
 
@@ -469,7 +469,7 @@ async function fetchOptions() {
   const { rows } = await query(
     `SELECT category, value
      FROM option_categories
-     ORDER BY category, value`
+     ORDER BY category, value`,
   );
 
   for (const row of rows) {
@@ -483,14 +483,14 @@ async function fetchOptions() {
 
   for (const key of OPTION_CATEGORIES) {
     const values = Array.from(
-      new Set(initial[key].map((v) => v.trim()).filter((v) => v.length > 0))
+      new Set(initial[key].map((v) => v.trim()).filter((v) => v.length > 0)),
     );
     if (key === "operators" && canonicalOperatorMap.size) {
       initial[key] = sortOptionValues(
         values.map((value) => {
           const normalized = normalizeOperatorKey(value);
           return canonicalOperatorMap.get(normalized) || value;
-        })
+        }),
       );
     } else {
       initial[key] = sortOptionValues(values);
@@ -519,7 +519,7 @@ async function initializeDatabase() {
 
 async function ensureOptionSeed() {
   const { rows } = await query(
-    `SELECT COUNT(*)::int AS count FROM option_categories WHERE category = 'operators'`
+    `SELECT COUNT(*)::int AS count FROM option_categories WHERE category = 'operators'`,
   );
   if (!rows.length || rows[0].count > 0) {
     return;
@@ -535,7 +535,7 @@ async function ensureOptionSeed() {
         `INSERT INTO option_categories (category, value)
          VALUES ('operators', $1)
          ON CONFLICT (category, value) DO NOTHING`,
-        [name]
+        [name],
       );
     }
   } catch {
@@ -558,14 +558,14 @@ async function addOption(category, value) {
     `SELECT id FROM option_categories
      WHERE category = $1 AND LOWER(value) = LOWER($2)
      LIMIT 1`,
-    [normalizedCategory, normalizedValue]
+    [normalizedCategory, normalizedValue],
   );
   if (existing.rows.length === 0) {
     await query(
       `INSERT INTO option_categories (category, value)
        VALUES ($1, $2)
        ON CONFLICT (category, value) DO NOTHING`,
-      [normalizedCategory, normalizedValue]
+      [normalizedCategory, normalizedValue],
     );
   }
   return fetchOptions();
@@ -585,7 +585,7 @@ async function deleteOption(category, value) {
     `DELETE FROM option_categories
      WHERE category = $1 AND LOWER(value) = LOWER($2)
      RETURNING id`,
-    [normalizedCategory, normalizedValue]
+    [normalizedCategory, normalizedValue],
   );
   if (result.rowCount === 0) {
     const options = await fetchOptions();
@@ -605,7 +605,7 @@ async function findUserByLoginKey(loginKey) {
      FROM users
       WHERE LOWER(email) = $1
      LIMIT 1`,
-    [normalizedKey]
+    [normalizedKey],
   ).then((res) => (res.rows.length ? res.rows[0] : null));
 }
 
@@ -615,7 +615,7 @@ async function findUserById(id) {
      FROM users
      WHERE id = $1
      LIMIT 1`,
-    [id]
+    [id],
   ).then((res) => (res.rows.length ? res.rows[0] : null));
 }
 
@@ -635,7 +635,7 @@ async function createUser({
   await query(
     `INSERT INTO users (id, email, password_hash, first_name, last_name, operator_name)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, normalizedLoginKey, passwordHash, firstName, lastName, operatorName]
+    [id, normalizedLoginKey, passwordHash, firstName, lastName, operatorName],
   );
 }
 
@@ -670,7 +670,7 @@ async function updateUser({
     `UPDATE users
      SET ${fields.join(", ")}
      WHERE id = $${idx}`,
-    values
+    values,
   );
 }
 
@@ -730,7 +730,7 @@ function normalizeTimeString(value) {
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
     2,
-    "0"
+    "0",
   )}`;
 }
 
@@ -788,10 +788,10 @@ async function createEntryInDb(entry, req) {
 
   const preferredStartLocation = coalesce(
     startLocation,
-    coalesce(locationFromBody, "")
+    coalesce(locationFromBody, ""),
   );
   const normalizedPreferredStart = normalizeLocationString(
-    preferredStartLocation
+    preferredStartLocation,
   );
 
   let normalizedLocation = normalizedPreferredStart;
@@ -805,7 +805,7 @@ async function createEntryInDb(entry, req) {
   const normalizedStartLocation =
     normalizedPreferredStart || normalizedLocation || "";
   const normalizedEndLocation = normalizeLocationString(
-    coalesce(endLocation, "")
+    coalesce(endLocation, ""),
   );
 
   const normalizedStart = normalizeTimeString(startTime);
@@ -883,7 +883,7 @@ async function createEntryInDb(entry, req) {
       normalizedTransfer,
       normalizedStartLocation || null,
       normalizedEndLocation || null,
-    ]
+    ],
   );
   return rows[0];
 }
@@ -957,7 +957,7 @@ async function searchEntriesInDb(filters = {}) {
      FROM entries
      ${whereClause}
      ORDER BY work_date DESC, id DESC`,
-    params
+    params,
   );
   return rows;
 }
@@ -981,7 +981,7 @@ async function fetchEntryById(id) {
             end_location
      FROM entries
      WHERE id = $1`,
-    [id]
+    [id],
   );
   return rows[0] || null;
 }
@@ -1010,7 +1010,7 @@ async function findOpenEntryForOperator(operator) {
        AND end_time IS NULL
      ORDER BY work_date DESC, id DESC
      LIMIT 1`,
-    [operator]
+    [operator],
   );
   return rows[0] || null;
 }
@@ -1025,7 +1025,7 @@ async function deleteEntryById(id) {
 async function deleteEntriesByIds(ids) {
   const result = await query(
     `DELETE FROM entries WHERE id = ANY($1::bigint[]) RETURNING id`,
-    [ids]
+    [ids],
   );
   return result.rowCount;
 }
@@ -1073,7 +1073,7 @@ function issueUserToken(res, userId) {
     "Set-Cookie",
     `userToken=${token}; HttpOnly; Path=/; Max-Age=${
       7 * 24 * 60 * 60
-    }; SameSite=Lax`
+    }; SameSite=Lax`,
   );
   return token;
 }
@@ -1084,7 +1084,7 @@ function clearUserToken(res, token) {
   }
   res.setHeader(
     "Set-Cookie",
-    "userToken=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax"
+    "userToken=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
   );
 }
 
@@ -1139,7 +1139,7 @@ function verifyPassword(password, stored) {
   if (hash.length !== candidate.length) return false;
   return crypto.timingSafeEqual(
     Buffer.from(hash, "hex"),
-    Buffer.from(candidate, "hex")
+    Buffer.from(candidate, "hex"),
   );
 }
 
@@ -1333,8 +1333,8 @@ app.post("/api/options", authMiddleware, async (req, res) => {
       const values = Array.isArray(payload[key])
         ? payload[key]
         : payload[key]
-        ? [payload[key]]
-        : [];
+          ? [payload[key]]
+          : [];
       for (const rawValue of values) {
         await addOption(key, rawValue);
       }
@@ -1464,7 +1464,7 @@ app.post("/api/entry/start", async (req, res) => {
         startLocation: locationFromBody,
         endLocation: null,
       },
-      req
+      req,
     );
 
     res.json({ ok: true, entry });
@@ -1549,7 +1549,7 @@ app.post("/api/entry/finish", async (req, res) => {
 
     let elapsedMinutes = calculateShiftDurationMinutes(
       startMinutes,
-      endMinutes
+      endMinutes,
     );
     if (elapsedMinutes === null) {
       return res.status(400).json({
@@ -1570,7 +1570,7 @@ app.post("/api/entry/finish", async (req, res) => {
     const ore = Number((workedMinutes / 60).toFixed(2));
 
     let normalizedEndLocation = normalizeLocationString(
-      coalesce(endLocationRaw, "")
+      coalesce(endLocationRaw, ""),
     );
     if (!normalizedEndLocation) {
       const fallback = await resolveLocationFromRequest(req);
@@ -1583,8 +1583,8 @@ app.post("/api/entry/finish", async (req, res) => {
       typeof descrizione === "string"
         ? descrizione.trim()
         : typeof entry.descrizione === "string"
-        ? entry.descrizione
-        : "";
+          ? entry.descrizione
+          : "";
 
     const { rows } = await query(
       `UPDATE entries
@@ -1619,7 +1619,7 @@ app.post("/api/entry/finish", async (req, res) => {
         ore,
         sanitizedDescrizione,
         normalizedEndLocation || null,
-      ]
+      ],
     );
 
     const updated = rows[0];
@@ -1657,14 +1657,14 @@ app.post("/api/entry/comment", async (req, res) => {
 
     const descrizioneAggiornata = appendCommentToDescription(
       entry.descrizione,
-      trimmedComment
+      trimmedComment,
     );
     const { rows } = await query(
       `UPDATE entries
        SET descrizione = $2
        WHERE id = $1
        RETURNING id, descrizione`,
-      [entryId, descrizioneAggiornata]
+      [entryId, descrizioneAggiornata],
     );
 
     const updated = rows[0];
@@ -1716,7 +1716,7 @@ app.post("/api/entry", async (req, res) => {
     }
     const elapsedMinutes = calculateShiftDurationMinutes(
       startMinutes,
-      endMinutes
+      endMinutes,
     );
     if (elapsedMinutes === null) {
       return res
@@ -1784,7 +1784,7 @@ app.post("/api/entry", async (req, res) => {
         startLocation: locationFromBody,
         endLocation: locationFromBody,
       },
-      req
+      req,
     );
     res.json({ ok: true, entry });
   } catch (err) {
@@ -1899,6 +1899,27 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   const entriesPayload = req.body && req.body.entries;
   const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
 
+  const formatOreItaliane = (oreValue) => {
+    if (coalesce(oreValue, "") === "") return "";
+    const oreNumber = Number(oreValue);
+    if (!Number.isFinite(oreNumber)) return "";
+    return oreNumber.toFixed(2).replace(".", ",");
+  };
+
+  const formatOreEffettive = (oreValue) => {
+    if (coalesce(oreValue, "") === "") return "";
+    const oreNumber = Number(oreValue);
+    if (!Number.isFinite(oreNumber)) return "";
+    const totalMinutes = Math.round(oreNumber * 60);
+    const hh = Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, "0");
+    const mm = Math.max(totalMinutes % 60, 0)
+      .toString()
+      .padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Report");
 
@@ -1916,6 +1937,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     { header: "Geo inizio", key: "start_location", width: 26 },
     { header: "Geo fine", key: "end_location", width: 26 },
     { header: "Descrizione", key: "descrizione", width: 40 },
+    { header: "Ore effettive", key: "ore_effettive", width: 14 },
     { header: "ID", key: "id", width: 10 },
   ];
 
@@ -1923,11 +1945,11 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   for (const e of rows) {
     const resolvedStartLocation = await humanizeLocation(
       e.start_location ?? e.location,
-      geocodeCache
+      geocodeCache,
     );
     const resolvedEndLocation = await humanizeLocation(
       e.end_location,
-      geocodeCache
+      geocodeCache,
     );
     ws.addRow({
       operator: coalesce(e.operator, ""),
@@ -1939,13 +1961,14 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       break_minutes: coalesce(coalesce(e.break_minutes, e.breakMinutes), ""),
       transfer_minutes: coalesce(
         coalesce(e.transfer_minutes, e.transferMinutes),
-        ""
+        "",
       ),
-      ore: coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
+      ore: formatOreItaliane(e.ore),
       data: coalesce(e.data, ""),
       start_location: resolvedStartLocation,
       end_location: resolvedEndLocation,
       descrizione: coalesce(e.descrizione, ""),
+      ore_effettive: formatOreEffettive(e.ore),
       id: coalesce(e.id, ""),
     });
   }
@@ -1955,7 +1978,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
   res.setHeader(
     "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   );
   res.send(Buffer.from(buf));
 });
@@ -2007,7 +2030,7 @@ async function startServerWithRetry() {
           HAS_VALID_ENV_PORT
             ? "Imposta la variabile di ambiente PORT o chiudi l'altra applicazione che utilizza la porta."
             : "Chiudi l'altra applicazione che la utilizza o attendi che si liberi."
-        }`
+        }`,
       );
 
       if (HAS_VALID_ENV_PORT) {
@@ -2017,7 +2040,7 @@ async function startServerWithRetry() {
       attempt += 1;
       const waitTimeMs = Math.min(1000 * attempt, 5000);
       console.log(
-        `Riprovo automaticamente la porta ${targetPort} tra ${waitTimeMs}ms...`
+        `Riprovo automaticamente la porta ${targetPort} tra ${waitTimeMs}ms...`,
       );
       await wait(waitTimeMs);
     }
