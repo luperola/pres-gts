@@ -1892,72 +1892,88 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
           ? filtersPayload
           : {},
       );
-  const headers = [
-    "Operatore",
-    "Cantiere",
-    "Macchina",
-    "Linea",
-    "Ora inizio",
-    "Ora fine",
-    "Pausa (min)",
-    "Trasferimento (min)",
-    "Ore",
-    "Data",
-    "Geo inizio",
-    "Geo fine",
-    "Descrizione",
-    "ID",
-  ];
-  const lines = [];
-  lines.push(headers.join(";"));
-  const locationCache = new Map();
+  try {
+    const entriesPayload = req.body && req.body.entries;
+    const filtersPayload = req.body && req.body.filters;
+    const hasDirectEntries = Array.isArray(entriesPayload);
+    const rows = hasDirectEntries
+      ? entriesPayload
+      : await searchEntriesInDb(
+          filtersPayload && typeof filtersPayload === "object"
+            ? filtersPayload
+            : {},
+        );
+    const headers = [
+      "Operatore",
+      "Cantiere",
+      "Macchina",
+      "Linea",
+      "Ora inizio",
+      "Ora fine",
+      "Pausa (min)",
+      "Trasferimento (min)",
+      "Ore",
+      "Data",
+      "Geo inizio",
+      "Geo fine",
+      "Descrizione",
+      "ID",
+    ];
+    const lines = [];
+    lines.push(headers.join(";"));
+    const locationCache = new Map();
 
-  const formatOreHhCommaMm = (oreValue) => {
-    if (coalesce(oreValue, "") === "") return "";
-    const oreNumber = Number(oreValue);
-    if (!Number.isFinite(oreNumber)) return "";
-    const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
-    const hh = Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, "0");
-    const mm = (totalMinutes % 60).toString().padStart(2, "0");
-    return `${hh},${mm}`;
-  };
+    const formatOreHhCommaMm = (oreValue) => {
+      if (coalesce(oreValue, "") === "") return "";
+      const oreNumber = Number(oreValue);
+      if (!Number.isFinite(oreNumber)) return "";
+      const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
+      const hh = Math.floor(totalMinutes / 60)
+        .toString()
+        .padStart(2, "0");
+      const mm = (totalMinutes % 60).toString().padStart(2, "0");
+      return `${hh},${mm}`;
+    };
 
-  for (const e of rows) {
-    const startLocation = await humanizeLocation(
-      coalesce(e.start_location, e.location),
-      locationCache,
-    );
-    const endLocation = await humanizeLocation(
-      coalesce(e.end_location, ""),
-      locationCache,
-    );
-    const line = [
-      coalesce(e.operator, ""),
-      coalesce(e.cantiere, ""),
-      coalesce(e.macchina, ""),
-      coalesce(e.linea, ""),
-      coalesce(e.start_time, ""),
-      coalesce(e.end_time, ""),
-      coalesce(e.break_minutes, ""),
-      coalesce(e.transfer_minutes, ""),
-      formatOreHhCommaMm(e.ore),
-      coalesce(e.data, ""),
-      startLocation,
-      endLocation,
-      coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
-      coalesce(e.id, ""),
-    ]
-      .map((v) => String(v).replace(/;/g, ","))
-      .join(";");
-    lines.push(line);
+    for (const e of rows) {
+      const startLocation = await humanizeLocation(
+        coalesce(e.start_location, e.location),
+        locationCache,
+      );
+      const endLocation = await humanizeLocation(
+        coalesce(e.end_location, ""),
+        locationCache,
+      );
+      const line = [
+        coalesce(e.operator, ""),
+        coalesce(e.cantiere, ""),
+        coalesce(e.macchina, ""),
+        coalesce(e.linea, ""),
+        coalesce(e.start_time, ""),
+        coalesce(e.end_time, ""),
+        coalesce(e.break_minutes, ""),
+        coalesce(e.transfer_minutes, ""),
+        formatOreHhCommaMm(e.ore),
+        coalesce(e.data, ""),
+        startLocation,
+        endLocation,
+        coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
+        coalesce(e.id, ""),
+      ]
+        .map((v) => String(v).replace(/;/g, ","))
+        .join(";");
+      lines.push(line);
+    }
+
+    const csv = lines.join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("Errore export CSV", errorMessage);
+    return res.status(500).json({ error: "Errore export CSV" });
   }
-
-  const csv = lines.join("\r\n");
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
-  res.send(csv);
 });
 
 // --- EXPORT XLSX ---
