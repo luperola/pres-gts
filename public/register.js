@@ -5,7 +5,7 @@ function showFeedback(message, type = "success") {
     "d-none",
     "alert-success",
     "alert-danger",
-    "alert-warning"
+    "alert-warning",
   );
   feedback.classList.add(`alert-${type}`);
 }
@@ -24,13 +24,25 @@ async function handleAuthSubmit(url, payload) {
     credentials: "same-origin",
     body: JSON.stringify(payload),
   });
+
+  const parseResponsePayload = async () => {
+    const rawBody = await res.text();
+    if (!rawBody) return {};
+    try {
+      return JSON.parse(rawBody);
+    } catch {
+      return { error: rawBody.slice(0, 240) };
+    }
+  };
+
   if (!res.ok) {
-    const data = await res
-      .json()
-      .catch(() => ({ error: "Errore sconosciuto" }));
-    throw new Error(data.error || "Errore sconosciuto");
+    const data = await parseResponsePayload();
+    throw new Error(
+      data.error ||
+        `Errore ${res.status}: risposta non valida dal server (atteso JSON)`,
+    );
   }
-  return res.json();
+  return parseResponsePayload();
 }
 
 function redirectToIndex() {
@@ -133,7 +145,7 @@ function initCredentialHelpers(prefix) {
   if (helperInput) {
     ["input", "change"].forEach((eventName) => {
       helperInput.addEventListener(eventName, () =>
-        syncNamesFromCredentialHelper(prefix)
+        syncNamesFromCredentialHelper(prefix),
       );
     });
     syncNamesFromCredentialHelper(prefix);
@@ -180,7 +192,7 @@ document
     if (!firstName || !lastName || !password) {
       showFeedback(
         "Compila nome, cognome e password per completare la registrazione.",
-        "warning"
+        "warning",
       );
       return;
     }
@@ -192,7 +204,7 @@ document
       });
       showFeedback(
         "Registrazione completata! Reindirizzamento in corso...",
-        "success"
+        "success",
       );
       setTimeout(redirectToIndex, 800);
     } catch (err) {

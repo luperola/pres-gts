@@ -5,7 +5,7 @@ function showFeedback(message, type = "success") {
     "d-none",
     "alert-success",
     "alert-danger",
-    "alert-warning"
+    "alert-warning",
   );
   feedback.classList.add(`alert-${type}`);
 }
@@ -40,13 +40,25 @@ async function resetPassword(payload) {
     credentials: "same-origin",
     body: JSON.stringify(payload),
   });
+
+  const parseResponsePayload = async () => {
+    const rawBody = await res.text();
+    if (!rawBody) return {};
+    try {
+      return JSON.parse(rawBody);
+    } catch {
+      return { error: rawBody.slice(0, 240) };
+    }
+  };
+
   if (!res.ok) {
-    const data = await res
-      .json()
-      .catch(() => ({ error: "Errore sconosciuto" }));
-    throw new Error(data.error || "Errore sconosciuto");
+    const data = await parseResponsePayload();
+    throw new Error(
+      data.error ||
+        `Errore ${res.status}: risposta non valida dal server (atteso JSON)`,
+    );
   }
-  return res.json();
+  return parseResponsePayload();
 }
 
 function redirectToIndex() {
@@ -71,7 +83,7 @@ document.getElementById("resetForm").addEventListener("submit", async (e) => {
   if (!firstName || !lastName || !password || !passwordConfirm) {
     showFeedback(
       "Compila tutti i campi per procedere con il recupero della password.",
-      "warning"
+      "warning",
     );
     return;
   }
@@ -90,7 +102,7 @@ document.getElementById("resetForm").addEventListener("submit", async (e) => {
     await resetPassword({ firstName, lastName, password });
     showFeedback(
       "Password aggiornata con successo! Reindirizzamento in corso...",
-      "success"
+      "success",
     );
     setTimeout(redirectToIndex, 800);
   } catch (err) {
