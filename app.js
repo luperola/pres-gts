@@ -2102,7 +2102,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       lines.push(line);
     }
 
-    const csv = lines.join("\r\n");
+    const csv = `\uFEFF${lines.join("\r\n")}`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
     return res.send(csv);
