@@ -153,9 +153,11 @@ const NOMINATIM_USER_AGENT =
   process.env.NOMINATIM_USER_AGENT || "pres-gts/1.0 (admin@pres-gts.local)";
 const NOMINATIM_MIN_INTERVAL_MS = 1100;
 const NOMINATIM_COOLDOWN_ON_RATE_LIMIT_MS = 60_000;
+const REVERSE_GEOCODE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 let lastNominatimRequestAt = 0;
 let nominatimCooldownUntil = 0;
 let hasLoggedNominatimCooldown = false;
+const reverseGeocodeCache = new Map();
 
 function parseRetryAfterMs(retryAfterHeader) {
   if (!retryAfterHeader || typeof retryAfterHeader !== "string") return null;
@@ -344,7 +346,69 @@ function formatNominatimResult(data) {
   return null;
 }
 
+function getCachedReverseGeocodeLabel(cacheKey) {
+  const hit = reverseGeocodeCache.get(cacheKey);
+  if (!hit) return null;
+  if (Date.now() - hit.timestamp > REVERSE_GEOCODE_CACHE_TTL_MS) {
+    reverseGeocodeCache.delete(cacheKey);
+    return null;
+  }
+  return hit.label;
+}
+
+function saveCachedReverseGeocodeLabel(cacheKey, label) {
+  if (!cacheKey || !label) return;
+  reverseGeocodeCache.set(cacheKey, {
+    label,
+    timestamp: Date.now(),
+  });
+}
+function formatPhotonResult(data) {
+  const features = Array.isArray(data?.features) ? data.features : [];
+  const feature = features.find((entry) => entry && typeof entry === "object");
+  if (!feature || typeof feature !== "object") return null;
+  const properties = feature.properties || {};
+  const name =
+    typeof properties.name === "string" ? properties.name.trim() : "";
+  const street =
+    typeof properties.street === "string" ? properties.street.trim() : "";
+  const city =
+    typeof properties.city === "string" ? properties.city.trim() : "";
+  const state =
+    typeof properties.state === "string" ? properties.state.trim() : "";
+  const country =
+    typeof properties.country === "string" ? properties.country.trim() : "";
+  const parts = [name, street, city, state, country].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+async function reverseGeocodeViaPhoton(lat, lon) {
+  const url = new URL("https://photon.komoot.io/reverse");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": NOMINATIM_USER_AGENT,
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return formatPhotonResult(data);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function reverseGeocodeCoordinates(lat, lon) {
+  const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const cachedLabel = getCachedReverseGeocodeLabel(cacheKey);
+  if (cachedLabel) {
+    return cachedLabel;
+  }
   const now = Date.now();
   if (now < nominatimCooldownUntil) {
     if (!hasLoggedNominatimCooldown) {
@@ -353,6 +417,11 @@ async function reverseGeocodeCoordinates(lat, lon) {
         `Reverse geocode temporaneamente sospeso per rate limit (${cooldownSeconds}s).`,
       );
       hasLoggedNominatimCooldown = true;
+    }
+    const photonLabel = await reverseGeocodeViaPhoton(lat, lon);
+    if (photonLabel) {
+      saveCachedReverseGeocodeLabel(cacheKey, photonLabel);
+      return photonLabel;
     }
     return null;
   }
@@ -399,10 +468,25 @@ async function reverseGeocodeCoordinates(lat, lon) {
       throw new Error(`HTTP ${res.status}`);
     }
     const data = await res.json();
-    return formatNominatimResult(data);
+    const formatted = formatNominatimResult(data);
+    if (formatted) {
+      saveCachedReverseGeocodeLabel(cacheKey, formatted);
+      return formatted;
+    }
+    const photonLabel = await reverseGeocodeViaPhoton(lat, lon);
+    if (photonLabel) {
+      saveCachedReverseGeocodeLabel(cacheKey, photonLabel);
+      return photonLabel;
+    }
+    return null;
   } catch (err) {
     const errorMessage = err && err.message ? err.message : err;
     console.warn("Reverse geocode fallito", errorMessage);
+    const photonLabel = await reverseGeocodeViaPhoton(lat, lon);
+    if (photonLabel) {
+      saveCachedReverseGeocodeLabel(cacheKey, photonLabel);
+      return photonLabel;
+    }
     return null;
   } finally {
     clearTimeout(timeout);
@@ -414,7 +498,7 @@ async function humanizeLocation(rawLocation, cache = new Map()) {
   if (!trimmed) return "";
   const coords = extractCoordsFromLocationString(trimmed);
   if (!coords) return trimmed;
-  const key = `${coords.lat.toFixed(6)},${coords.lon.toFixed(6)}`;
+  const key = `${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`;
   if (cache.has(key)) {
     return cache.get(key);
   }
