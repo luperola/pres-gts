@@ -1910,8 +1910,29 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
   ];
   const lines = [];
   lines.push(headers.join(";"));
+  const locationCache = new Map();
+
+  const formatOreHhCommaMm = (oreValue) => {
+    if (coalesce(oreValue, "") === "") return "";
+    const oreNumber = Number(oreValue);
+    if (!Number.isFinite(oreNumber)) return "";
+    const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
+    const hh = Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, "0");
+    const mm = (totalMinutes % 60).toString().padStart(2, "0");
+    return `${hh},${mm}`;
+  };
 
   for (const e of rows) {
+    const startLocation = await humanizeLocation(
+      coalesce(e.start_location, e.location),
+      locationCache,
+    );
+    const endLocation = await humanizeLocation(
+      coalesce(e.end_location, ""),
+      locationCache,
+    );
     const line = [
       coalesce(e.operator, ""),
       coalesce(e.cantiere, ""),
@@ -1921,10 +1942,10 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       coalesce(e.end_time, ""),
       coalesce(e.break_minutes, ""),
       coalesce(e.transfer_minutes, ""),
-      coalesce(e.ore, "") !== "" ? Number(e.ore).toFixed(2) : "",
+      formatOreHhCommaMm(e.ore),
       coalesce(e.data, ""),
-      coalesce(coalesce(e.start_location, e.location), ""),
-      coalesce(e.end_location, ""),
+      startLocation,
+      endLocation,
       coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
       coalesce(e.id, ""),
     ]
@@ -1953,49 +1974,103 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
             : {},
         );
 
-    const normalizeOreValue = (oreValue) => {
+    const formatOreHhCommaMm = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
       const oreNumber = Number(oreValue);
       if (!Number.isFinite(oreNumber)) return "";
-      return Number(oreNumber.toFixed(2));
-    };
-
-    const formatOreEffettive = (oreValue) => {
-      if (coalesce(oreValue, "") === "") return "";
-      const oreNumber = Number(oreValue);
-      if (!Number.isFinite(oreNumber)) return "";
-      const totalMinutes = Math.round(oreNumber * 60);
+      const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
       const hh = Math.floor(totalMinutes / 60)
         .toString()
         .padStart(2, "0");
-      const mm = Math.max(totalMinutes % 60, 0)
-        .toString()
-        .padStart(2, "0");
-      return `${hh}:${mm}`;
+      const mm = (totalMinutes % 60).toString().padStart(2, "0");
+      return `${hh},${mm}`;
+    };
+
+    const formatOreEffettive = (oreValue) => {
+      return formatOreHhCommaMm(oreValue);
+    };
+
+    const xlsxColumnWidths = {
+      operator: 28,
+      cantiere: 28,
+      macchina: 22,
+      linea: 18,
+      start_time: 14,
+      end_time: 14,
+      break_minutes: 14,
+      transfer_minutes: 16,
+      ore: 14,
+      data: 14,
+      start_location: 44,
+      end_location: 44,
+      descrizione: 54,
+      ore_effettive: 16,
+      id: 10,
     };
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Report");
 
     ws.columns = [
-      { header: "Operatore", key: "operator", width: 24 },
-      { header: "Cantiere", key: "cantiere", width: 24 },
-      { header: "Macchina", key: "macchina", width: 18 },
-      { header: "Linea", key: "linea", width: 14 },
-      { header: "Ora inizio", key: "start_time", width: 12 },
-      { header: "Ora fine", key: "end_time", width: 12 },
-      { header: "Pausa (min)", key: "break_minutes", width: 12 },
-      { header: "Trasferimento", key: "transfer_minutes", width: 14 },
-      { header: "Ore", key: "ore", width: 10 },
-      { header: "Data", key: "data", width: 14 },
-      { header: "Geo inizio", key: "start_location", width: 26 },
-      { header: "Geo fine", key: "end_location", width: 26 },
-      { header: "Descrizione", key: "descrizione", width: 40 },
-      { header: "Ore effettive", key: "ore_effettive", width: 14 },
-      { header: "ID", key: "id", width: 10 },
+      {
+        header: "Operatore",
+        key: "operator",
+        width: xlsxColumnWidths.operator,
+      },
+      { header: "Cantiere", key: "cantiere", width: xlsxColumnWidths.cantiere },
+      { header: "Macchina", key: "macchina", width: xlsxColumnWidths.macchina },
+      { header: "Linea", key: "linea", width: xlsxColumnWidths.linea },
+      {
+        header: "Ora inizio",
+        key: "start_time",
+        width: xlsxColumnWidths.start_time,
+      },
+      { header: "Ora fine", key: "end_time", width: xlsxColumnWidths.end_time },
+      {
+        header: "Pausa (min)",
+        key: "break_minutes",
+        width: xlsxColumnWidths.break_minutes,
+      },
+      {
+        header: "Trasferimento",
+        key: "transfer_minutes",
+        width: xlsxColumnWidths.transfer_minutes,
+      },
+      { header: "Ore", key: "ore", width: xlsxColumnWidths.ore },
+      { header: "Data", key: "data", width: xlsxColumnWidths.data },
+      {
+        header: "Geo inizio",
+        key: "start_location",
+        width: xlsxColumnWidths.start_location,
+      },
+      {
+        header: "Geo fine",
+        key: "end_location",
+        width: xlsxColumnWidths.end_location,
+      },
+      {
+        header: "Descrizione",
+        key: "descrizione",
+        width: xlsxColumnWidths.descrizione,
+      },
+      {
+        header: "Ore effettive",
+        key: "ore_effettive",
+        width: xlsxColumnWidths.ore_effettive,
+      },
+      { header: "ID", key: "id", width: xlsxColumnWidths.id },
     ];
 
+    const locationCache = new Map();
     for (const e of rows) {
+      const startLocation = await humanizeLocation(
+        coalesce(e.start_location, e.location),
+        locationCache,
+      );
+      const endLocation = await humanizeLocation(
+        coalesce(e.end_location, ""),
+        locationCache,
+      );
       ws.addRow({
         operator: coalesce(e.operator, ""),
         cantiere: coalesce(e.cantiere, ""),
@@ -2008,17 +2083,16 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
           coalesce(e.transfer_minutes, e.transferMinutes),
           "",
         ),
-        ore: normalizeOreValue(e.ore),
+        ore: formatOreHhCommaMm(e.ore),
         data: coalesce(e.data, ""),
-        start_location: coalesce(coalesce(e.start_location, e.location), ""),
-        end_location: coalesce(e.end_location, ""),
+        start_location: startLocation,
+        end_location: endLocation,
         descrizione: coalesce(e.descrizione, ""),
         ore_effettive: formatOreEffettive(e.ore),
         id: coalesce(e.id, ""),
       });
     }
     ws.getRow(1).font = { bold: true };
-    ws.getColumn("ore").numFmt = "0.00";
 
     const buf = await wb.xlsx.writeBuffer();
     res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
