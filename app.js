@@ -1988,16 +1988,6 @@ app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
 
 // --- EXPORT CSV ---
 app.post("/api/export/csv", authMiddleware, async (req, res) => {
-  const entriesPayload = req.body && req.body.entries;
-  const filtersPayload = req.body && req.body.filters;
-  const hasDirectEntries = Array.isArray(entriesPayload);
-  const rows = hasDirectEntries
-    ? entriesPayload
-    : await searchEntriesInDb(
-        filtersPayload && typeof filtersPayload === "object"
-          ? filtersPayload
-          : {},
-      );
   try {
     const entriesPayload = req.body && req.body.entries;
     const filtersPayload = req.body && req.body.filters;
@@ -2053,6 +2043,11 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       return value.padEnd(width, " ");
     };
 
+    const toCsvCell = (value) => {
+      const escapedValue = value.replace(/"/g, '""');
+      return `"${escapedValue}"`;
+    };
+
     const formatOreHhCommaMm = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
       const oreNumber = Number(oreValue);
@@ -2097,7 +2092,11 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
             /;/g,
             ",",
           );
-          return padCsvValue(cleanValue, csvColumnWidths[column.key]);
+          const paddedValue = padCsvValue(
+            cleanValue,
+            csvColumnWidths[column.key],
+          );
+          return toCsvCell(paddedValue);
         })
         .join(";");
       lines.push(line);
@@ -2145,7 +2144,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     };
 
     const xlsxColumnWidths = {
-      operator: 70,
+      operator: 200,
       cantiere: 50,
       macchina: 50,
       linea: 50,
