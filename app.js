@@ -151,7 +151,11 @@ const ADMIN_PASS = process.env.ADMIN_PASS || "GTSTrack";
 const MAX_PORT_RETRIES_BEFORE_RANDOM = 3;
 const NOMINATIM_USER_AGENT =
   process.env.NOMINATIM_USER_AGENT || "pres-gts/1.0 (admin@pres-gts.local)";
+const NOMINATIM_MIN_INTERVAL_MS = 1100;
+const NOMINATIM_COOLDOWN_ON_RATE_LIMIT_MS = 60_000;
 let lastNominatimRequestAt = 0;
+let nominatimCooldownUntil = 0;
+let hasLoggedNominatimCooldown = false;
 
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -323,9 +327,21 @@ function formatNominatimResult(data) {
 
 async function reverseGeocodeCoordinates(lat, lon) {
   const now = Date.now();
+  if (now < nominatimCooldownUntil) {
+    if (!hasLoggedNominatimCooldown) {
+      const cooldownSeconds = Math.ceil((nominatimCooldownUntil - now) / 1000);
+      console.warn(
+        `Reverse geocode temporaneamente sospeso per rate limit (${cooldownSeconds}s).`,
+      );
+      hasLoggedNominatimCooldown = true;
+    }
+    return null;
+  }
+  hasLoggedNominatimCooldown = false;
+
   const elapsed = now - lastNominatimRequestAt;
-  if (elapsed < 1100) {
-    await wait(1100 - elapsed);
+  if (elapsed < NOMINATIM_MIN_INTERVAL_MS) {
+    await wait(NOMINATIM_MIN_INTERVAL_MS - elapsed);
   }
 
   const url = new URL("https://nominatim.openstreetmap.org/reverse");
@@ -348,6 +364,10 @@ async function reverseGeocodeCoordinates(lat, lon) {
     });
     lastNominatimRequestAt = Date.now();
     if (!res.ok) {
+      if (res.status === 429) {
+        nominatimCooldownUntil =
+          Date.now() + NOMINATIM_COOLDOWN_ON_RATE_LIMIT_MS;
+      }
       throw new Error(`HTTP ${res.status}`);
     }
     const data = await res.json();
