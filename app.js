@@ -1131,6 +1131,9 @@ async function userAuthMiddleware(req, res, next) {
     req.userInfo = userTokens.get(token);
     return next();
   }
+  if (req.path.startsWith("/api/")) {
+    return res.status(401).json({ error: "Utente non autenticato" });
+  }
   if (req.accepts("html")) {
     return res.redirect("/register.html");
   }
@@ -1156,6 +1159,7 @@ function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${hash}`;
+  clearScreenDown;
 }
 
 function verifyPassword(password, stored) {
