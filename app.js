@@ -89,7 +89,7 @@ function extractCredentials(req) {
 const app = express();
 app.use(
   bodyParser.json({
-    limit: "50mb",
+    limit: "20mb",
     verify: (req, res, buf, encoding) => {
       req.rawBody = buf.toString(encoding || "utf8");
     },
