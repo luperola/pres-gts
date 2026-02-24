@@ -2009,25 +2009,49 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
             ? filtersPayload
             : {},
         );
-    const headers = [
-      "Operatore",
-      "Cantiere",
-      "Macchina",
-      "Linea",
-      "Ora inizio",
-      "Ora fine",
-      "Pausa (min)",
-      "Trasferimento (min)",
-      "Ore",
-      "Data",
-      "Geo inizio",
-      "Geo fine",
-      "Descrizione",
-      "ID",
+    const csvColumnWidths = {
+      operator: 70,
+      cantiere: 50,
+      macchina: 50,
+      linea: 50,
+      start_time: 14,
+      end_time: 14,
+      break_minutes: 14,
+      transfer_minutes: 16,
+      ore: 14,
+      data: 14,
+      start_location: 60,
+      end_location: 60,
+      descrizione: 604,
+      ore_effettive: 16,
+      id: 10,
+    };
+    const csvColumns = [
+      { header: "Operatore", key: "operator" },
+      { header: "Cantiere", key: "cantiere" },
+      { header: "Macchina", key: "macchina" },
+      { header: "Linea", key: "linea" },
+      { header: "Ora inizio", key: "start_time" },
+      { header: "Ora fine", key: "end_time" },
+      { header: "Pausa (min)", key: "break_minutes" },
+      { header: "Trasferimento (min)", key: "transfer_minutes" },
+      { header: "Ore", key: "ore" },
+      { header: "Data", key: "data" },
+      { header: "Geo inizio", key: "start_location" },
+      { header: "Geo fine", key: "end_location" },
+      { header: "Descrizione", key: "descrizione" },
+      { header: "Ore effettive", key: "ore_effettive" },
+      { header: "ID", key: "id" },
     ];
+    const headers = csvColumns.map((column) => column.header);
     const lines = [];
     lines.push(headers.join(";"));
     const locationCache = new Map();
+
+    const padCsvValue = (value, width) => {
+      if (!Number.isFinite(width) || width <= 0) return value;
+      return value.padEnd(width, " ");
+    };
 
     const formatOreHhCommaMm = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
@@ -2050,23 +2074,31 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
         coalesce(e.end_location, ""),
         locationCache,
       );
-      const line = [
-        coalesce(e.operator, ""),
-        coalesce(e.cantiere, ""),
-        coalesce(e.macchina, ""),
-        coalesce(e.linea, ""),
-        coalesce(e.start_time, ""),
-        coalesce(e.end_time, ""),
-        coalesce(e.break_minutes, ""),
-        coalesce(e.transfer_minutes, ""),
-        formatOreHhCommaMm(e.ore),
-        coalesce(e.data, ""),
-        startLocation,
-        endLocation,
-        coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
-        coalesce(e.id, ""),
-      ]
-        .map((v) => String(v).replace(/;/g, ","))
+      const lineData = {
+        operator: coalesce(e.operator, ""),
+        cantiere: coalesce(e.cantiere, ""),
+        macchina: coalesce(e.macchina, ""),
+        linea: coalesce(e.linea, ""),
+        start_time: coalesce(e.start_time, ""),
+        end_time: coalesce(e.end_time, ""),
+        break_minutes: coalesce(e.break_minutes, ""),
+        transfer_minutes: coalesce(e.transfer_minutes, ""),
+        ore: formatOreHhCommaMm(e.ore),
+        data: coalesce(e.data, ""),
+        start_location: startLocation,
+        end_location: endLocation,
+        descrizione: coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
+        ore_effettive: formatOreHhCommaMm(e.ore),
+        id: coalesce(e.id, ""),
+      };
+      const line = csvColumns
+        .map((column) => {
+          const cleanValue = String(coalesce(lineData[column.key], "")).replace(
+            /;/g,
+            ",",
+          );
+          return padCsvValue(cleanValue, csvColumnWidths[column.key]);
+        })
         .join(";");
       lines.push(line);
     }
