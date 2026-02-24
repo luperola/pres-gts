@@ -2144,7 +2144,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     };
 
     const xlsxColumnWidths = {
-      operator: 200,
+      operator: 70,
       cantiere: 50,
       macchina: 50,
       linea: 50,
