@@ -157,6 +157,25 @@ let lastNominatimRequestAt = 0;
 let nominatimCooldownUntil = 0;
 let hasLoggedNominatimCooldown = false;
 
+function parseRetryAfterMs(retryAfterHeader) {
+  if (!retryAfterHeader || typeof retryAfterHeader !== "string") return null;
+
+  const seconds = Number(retryAfterHeader);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const retryAt = Date.parse(retryAfterHeader);
+  if (Number.isFinite(retryAt)) {
+    const delta = retryAt - Date.now();
+    if (delta > 0) {
+      return delta;
+    }
+  }
+
+  return null;
+}
+
 // --- Static ---
 const PUBLIC_DIR = path.join(__dirname, "public");
 const INIT_SQL_PATH = path.join(__dirname, "sql", "init.sql");
@@ -365,8 +384,17 @@ async function reverseGeocodeCoordinates(lat, lon) {
     lastNominatimRequestAt = Date.now();
     if (!res.ok) {
       if (res.status === 429) {
+        const retryAfterMs = parseRetryAfterMs(res.headers.get("retry-after"));
         nominatimCooldownUntil =
-          Date.now() + NOMINATIM_COOLDOWN_ON_RATE_LIMIT_MS;
+          Date.now() + (retryAfterMs || NOMINATIM_COOLDOWN_ON_RATE_LIMIT_MS);
+        const cooldownSeconds = Math.ceil(
+          (nominatimCooldownUntil - Date.now()) / 1000,
+        );
+        console.warn(
+          `Reverse geocode in rate limit (HTTP 429), sospeso per ${cooldownSeconds}s.`,
+        );
+        hasLoggedNominatimCooldown = true;
+        return null;
       }
       throw new Error(`HTTP ${res.status}`);
     }
