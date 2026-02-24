@@ -269,81 +269,56 @@ function formatNominatimResult(data) {
   if (!data || typeof data !== "object") return null;
   const address =
     typeof data.address === "object" && data.address ? data.address : {};
-  const city =
+  const locality =
     address.city ||
     address.town ||
     address.village ||
     address.hamlet ||
     address.municipality ||
     address.city_district ||
-    null;
-  const suburb =
     address.suburb ||
     address.neighbourhood ||
     address.quarter ||
     address.residential ||
     address.city_block ||
     null;
-  const road =
-    address.road ||
-    address.pedestrian ||
-    address.footway ||
-    address.cycleway ||
-    address.path ||
-    address.service ||
+  const province =
+    address.county ||
+    address.province ||
+    address.state_district ||
+    address.state ||
+    address.region ||
     null;
-  const houseNumber = address.house_number || null;
-  const province = address.state || address.region || address.county || null;
   const country = address.country || null;
-
-  const parts = [];
-  if (road) {
-    parts.push(houseNumber ? `${road} ${houseNumber}` : road);
-  } else if (suburb) {
-    parts.push(suburb);
-  }
-  if (suburb && !parts.includes(suburb)) {
-    parts.push(suburb);
-  }
-  if (city) {
-    parts.push(city);
-  }
-  if (province && province !== city) {
-    parts.push(province);
-  }
-  if (country) {
-    parts.push(country);
-  }
-
-  const formatted = parts
-    .map((segment) => (typeof segment === "string" ? segment.trim() : ""))
-    .filter((segment) => segment.length > 0)
-    .join(", ");
-
-  if (formatted) {
-    return formatted;
+  if (typeof locality === "string" && locality.trim()) {
+    return locality.trim();
   }
 
   if (typeof data.display_name === "string" && data.display_name.trim()) {
-    const segments = data.display_name
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    if (segments.length) {
-      return segments.slice(0, 4).join(", ");
-    }
+    return extractLocalityFromAddressString(data.display_name);
   }
 
-  if (city && country) {
-    return `${city}, ${country}`;
+  if (typeof province === "string" && province.trim()) {
+    return province.trim();
   }
-  if (city) {
-    return city;
-  }
-  if (country) {
-    return country;
+  if (typeof country === "string" && country.trim()) {
+    return country.trim();
   }
   return null;
+}
+
+function extractLocalityFromAddressString(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const segments = trimmed
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (!segments.length) return "";
+  if (segments.length === 1) return segments[0];
+  if (segments.length === 2) return segments[0];
+  return segments[segments.length - 3];
 }
 
 function getCachedReverseGeocodeLabel(cacheKey) {
@@ -368,18 +343,17 @@ function formatPhotonResult(data) {
   const feature = features.find((entry) => entry && typeof entry === "object");
   if (!feature || typeof feature !== "object") return null;
   const properties = feature.properties || {};
-  const name =
-    typeof properties.name === "string" ? properties.name.trim() : "";
-  const street =
-    typeof properties.street === "string" ? properties.street.trim() : "";
   const city =
     typeof properties.city === "string" ? properties.city.trim() : "";
+  const district =
+    typeof properties.district === "string" ? properties.district.trim() : "";
+  const county =
+    typeof properties.county === "string" ? properties.county.trim() : "";
   const state =
     typeof properties.state === "string" ? properties.state.trim() : "";
   const country =
     typeof properties.country === "string" ? properties.country.trim() : "";
-  const parts = [name, street, city, state, country].filter(Boolean);
-  return parts.length ? parts.join(", ") : null;
+  return city || district || county || state || country || null;
 }
 async function reverseGeocodeViaPhoton(lat, lon) {
   const url = new URL("https://photon.komoot.io/reverse");
@@ -497,13 +471,13 @@ async function humanizeLocation(rawLocation, cache = new Map()) {
   const trimmed = typeof rawLocation === "string" ? rawLocation.trim() : "";
   if (!trimmed) return "";
   const coords = extractCoordsFromLocationString(trimmed);
-  if (!coords) return trimmed;
+  if (!coords) return extractLocalityFromAddressString(trimmed);
   const key = `${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`;
   if (cache.has(key)) {
     return cache.get(key);
   }
   const label = await reverseGeocodeCoordinates(coords.lat, coords.lon);
-  const value = label || trimmed;
+  const value = label || "Località non disponibile";
   cache.set(key, value);
   return value;
 }
