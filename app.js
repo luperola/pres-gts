@@ -1883,7 +1883,15 @@ app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
 // --- EXPORT CSV ---
 app.post("/api/export/csv", authMiddleware, async (req, res) => {
   const entriesPayload = req.body && req.body.entries;
-  const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
+  const filtersPayload = req.body && req.body.filters;
+  const hasDirectEntries = Array.isArray(entriesPayload);
+  const rows = hasDirectEntries
+    ? entriesPayload
+    : await searchEntriesInDb(
+        filtersPayload && typeof filtersPayload === "object"
+          ? filtersPayload
+          : {},
+      );
   const headers = [
     "Operatore",
     "Cantiere",
@@ -1987,16 +1995,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       { header: "ID", key: "id", width: 10 },
     ];
 
-    const geocodeCache = new Map();
     for (const e of rows) {
-      const resolvedStartLocation = await humanizeLocation(
-        e.start_location ?? e.location,
-        geocodeCache,
-      );
-      const resolvedEndLocation = await humanizeLocation(
-        e.end_location,
-        geocodeCache,
-      );
       ws.addRow({
         operator: coalesce(e.operator, ""),
         cantiere: coalesce(e.cantiere, ""),
@@ -2011,8 +2010,8 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
         ),
         ore: normalizeOreValue(e.ore),
         data: coalesce(e.data, ""),
-        start_location: resolvedStartLocation,
-        end_location: resolvedEndLocation,
+        start_location: coalesce(coalesce(e.start_location, e.location), ""),
+        end_location: coalesce(e.end_location, ""),
         descrizione: coalesce(e.descrizione, ""),
         ore_effettive: formatOreEffettive(e.ore),
         id: coalesce(e.id, ""),
