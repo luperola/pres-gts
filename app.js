@@ -97,18 +97,19 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 app.use((err, req, res, next) => {
-  if (
-    err instanceof SyntaxError &&
-    err.status === 400 &&
-    "body" in err &&
-    typeof req.rawBody === "string"
-  ) {
-    const recoveredJson = tryParseLooseJson(req.rawBody);
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    const sourceBody =
+      typeof req.rawBody === "string"
+        ? req.rawBody
+        : typeof err.body === "string"
+          ? err.body
+          : "";
+    const recoveredJson = tryParseLooseJson(sourceBody);
     if (recoveredJson) {
       req.body = recoveredJson;
       return next();
     }
-    const recoveredObject = coerceBodyToObject(null, req.rawBody);
+    const recoveredObject = coerceBodyToObject(null, sourceBody);
     req.body = recoveredObject;
     return next();
   }
