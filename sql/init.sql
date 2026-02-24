@@ -30,6 +30,12 @@ ALTER TABLE entries
 ALTER TABLE entries
   ADD COLUMN IF NOT EXISTS end_location TEXT;
 
+CREATE INDEX IF NOT EXISTS idx_entries_work_date
+  ON entries(work_date);
+
+CREATE INDEX IF NOT EXISTS idx_entries_operator_work_date
+  ON entries(operator, work_date);
+
 CREATE TABLE IF NOT EXISTS option_categories (
   id SERIAL PRIMARY KEY,
   category TEXT NOT NULL,

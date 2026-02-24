@@ -1822,27 +1822,33 @@ app.post("/api/entry", async (req, res) => {
 
 // --- SEARCH (filtri) ---
 app.post("/api/entries/search", authMiddleware, async (req, res) => {
-  const {
-    cantiere = null,
-    macchina = null,
-    linea = null,
-    operator = null,
-    descrContains = null,
-    dataFrom = null,
-    dataTo = null,
-  } = req.body || {};
+  try {
+    const {
+      cantiere = null,
+      macchina = null,
+      linea = null,
+      operator = null,
+      descrContains = null,
+      dataFrom = null,
+      dataTo = null,
+    } = req.body || {};
 
-  const entries = await searchEntriesInDb({
-    cantiere,
-    macchina,
-    linea,
-    operator,
-    descrContains,
-    dataFrom,
-    dataTo,
-  });
+    const entries = await searchEntriesInDb({
+      cantiere,
+      macchina,
+      linea,
+      operator,
+      descrContains,
+      dataFrom,
+      dataTo,
+    });
 
-  res.json({ entries });
+    return res.json({ entries });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Errore ricerca entries", message);
+    return res.status(500).json({ error: "Errore ricerca" });
+  }
 });
 
 // --- DELETE singola riga ---
