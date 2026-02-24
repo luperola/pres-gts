@@ -2113,19 +2113,19 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     };
 
     const xlsxColumnWidths = {
-      operator: 28,
-      cantiere: 28,
-      macchina: 22,
-      linea: 18,
+      operator: 70,
+      cantiere: 50,
+      macchina: 50,
+      linea: 50,
       start_time: 14,
       end_time: 14,
       break_minutes: 14,
       transfer_minutes: 16,
       ore: 14,
       data: 14,
-      start_location: 44,
-      end_location: 44,
-      descrizione: 54,
+      start_location: 60,
+      end_location: 60,
+      descrizione: 604,
       ore_effettive: 16,
       id: 10,
     };
