@@ -32,10 +32,10 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function setExportLoading(isLoading) {
-  const btn = $("btnXlsx");
-  const spinner = $("spinnerXlsx");
-  const label = $("btnXlsxLabel");
+function setCsvLoading(isLoading) {
+  const btn = $("btnCsv");
+  const spinner = $("spinnerCsv");
+  const label = $("btnCsvLabel");
 
   if (btn) {
     btn.disabled = isLoading;
@@ -44,17 +44,15 @@ function setExportLoading(isLoading) {
   if (spinner) {
     spinner.classList.toggle("d-none", !isLoading);
   }
-
   if (label) {
     if (!label.dataset.defaultText) {
-      label.dataset.defaultText = label.textContent || "Export Excel";
+      label.dataset.defaultText = label.textContent || "Export CSV";
     }
     label.textContent = isLoading
-      ? "Preparazione..."
+      ? "In preparazione..."
       : label.dataset.defaultText;
   }
 }
-
 function debounce(fn, delay = 300) {
   let timeoutId;
   return function (...args) {
@@ -209,6 +207,7 @@ async function deleteFiltered() {
 
 async function exportCsv() {
   const filters = getActiveFilters();
+  setCsvLoading(true);
   try {
     const res = await fetch("/api/export/csv", {
       method: "POST",
@@ -228,33 +227,8 @@ async function exportCsv() {
   } catch (error) {
     console.error("Errore export CSV", error);
     $("loginMsg").textContent = "Errore export CSV";
-  }
-}
 
-async function exportXlsx() {
-  const filters = getActiveFilters();
-  setExportLoading(true);
-  try {
-    const res = await fetch("/api/export/xlsx", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + TOKEN,
-      },
-      body: JSON.stringify({ filters }),
-    });
-    if (!res.ok) {
-      const out = await safeJson(res);
-      $("loginMsg").textContent = out?.error || "Errore export Excel";
-      return;
-    }
-    const blob = await res.blob();
-    downloadBlob(blob, "report.xlsx");
-  } catch (error) {
-    console.error("Errore export Excel", error);
-    $("loginMsg").textContent = "Errore export Excel";
-  } finally {
-    setExportLoading(false);
+    setCsvLoading(false);
   }
 }
 
@@ -340,8 +314,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
   // Export
-  const btnXlsx = $("btnXlsx");
-  if (btnXlsx) btnXlsx.addEventListener("click", exportXlsx);
 
   const btnCsv = $("btnCsv");
   if (btnCsv) btnCsv.addEventListener("click", exportCsv);
