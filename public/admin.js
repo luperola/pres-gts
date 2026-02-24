@@ -227,7 +227,7 @@ async function exportCsv() {
   } catch (error) {
     console.error("Errore export CSV", error);
     $("loginMsg").textContent = "Errore export CSV";
-
+  } finally {
     setCsvLoading(false);
   }
 }
