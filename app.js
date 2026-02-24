@@ -89,7 +89,7 @@ function extractCredentials(req) {
 const app = express();
 app.use(
   bodyParser.json({
-    limit: "5mb",
+    limit: "50mb",
     verify: (req, res, buf, encoding) => {
       req.rawBody = buf.toString(encoding || "utf8");
     },
@@ -113,6 +113,26 @@ app.use((err, req, res, next) => {
     return next();
   }
   return next(err);
+});
+
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (res.headersSent) return next(err);
+
+  if (err.type === "entity.too.large" || err.status === 413) {
+    return res.status(413).json({
+      error:
+        "Richiesta troppo grande per l'export. Riduci il numero di righe filtrate e riprova.",
+    });
+  }
+
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ error: "JSON non valido" });
+  }
+
+  const errorMessage = err && err.message ? err.message : err;
+  console.error("Errore middleware:", errorMessage);
+  return res.status(500).json({ error: "Errore interno del server" });
 });
 // __dirname in ESM (compatibile Windows)
 //const __filename = fileURLToPath(import.meta.url);
@@ -1903,7 +1923,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     if (coalesce(oreValue, "") === "") return "";
     const oreNumber = Number(oreValue);
     if (!Number.isFinite(oreNumber)) return "";
-   return Number(oreNumber.toFixed(2));
+    return Number(oreNumber.toFixed(2));
   };
 
   const formatOreEffettive = (oreValue) => {
@@ -1973,7 +1993,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     });
   }
   ws.getRow(1).font = { bold: true };
-   ws.getColumn("ore").numFmt = "0.00";
+  ws.getColumn("ore").numFmt = "0.00";
 
   const buf = await wb.xlsx.writeBuffer();
   res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
