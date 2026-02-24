@@ -334,8 +334,12 @@ async function reverseGeocodeCoordinates(lat, lon) {
   url.searchParams.set("zoom", "16");
   url.searchParams.set("addressdetails", "1");
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
   try {
     const res = await fetch(url, {
+      signal: controller.signal,
       headers: {
         "User-Agent": NOMINATIM_USER_AGENT,
         "Accept-Language": "it,en",
@@ -351,6 +355,8 @@ async function reverseGeocodeCoordinates(lat, lon) {
     const errorMessage = err && err.message ? err.message : err;
     console.warn("Reverse geocode fallito", errorMessage);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -1916,100 +1922,106 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 
 // --- EXPORT XLSX ---
 app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
-  const entriesPayload = req.body && req.body.entries;
-  const filtersPayload = req.body && req.body.filters;
-  const hasDirectEntries = Array.isArray(entriesPayload);
-  const rows = hasDirectEntries
-    ? entriesPayload
-    : await searchEntriesInDb(
-        filtersPayload && typeof filtersPayload === "object"
-          ? filtersPayload
-          : {},
+  try {
+    const entriesPayload = req.body && req.body.entries;
+    const filtersPayload = req.body && req.body.filters;
+    const hasDirectEntries = Array.isArray(entriesPayload);
+    const rows = hasDirectEntries
+      ? entriesPayload
+      : await searchEntriesInDb(
+          filtersPayload && typeof filtersPayload === "object"
+            ? filtersPayload
+            : {},
+        );
+
+    const normalizeOreValue = (oreValue) => {
+      if (coalesce(oreValue, "") === "") return "";
+      const oreNumber = Number(oreValue);
+      if (!Number.isFinite(oreNumber)) return "";
+      return Number(oreNumber.toFixed(2));
+    };
+
+    const formatOreEffettive = (oreValue) => {
+      if (coalesce(oreValue, "") === "") return "";
+      const oreNumber = Number(oreValue);
+      if (!Number.isFinite(oreNumber)) return "";
+      const totalMinutes = Math.round(oreNumber * 60);
+      const hh = Math.floor(totalMinutes / 60)
+        .toString()
+        .padStart(2, "0");
+      const mm = Math.max(totalMinutes % 60, 0)
+        .toString()
+        .padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Report");
+
+    ws.columns = [
+      { header: "Operatore", key: "operator", width: 24 },
+      { header: "Cantiere", key: "cantiere", width: 24 },
+      { header: "Macchina", key: "macchina", width: 18 },
+      { header: "Linea", key: "linea", width: 14 },
+      { header: "Ora inizio", key: "start_time", width: 12 },
+      { header: "Ora fine", key: "end_time", width: 12 },
+      { header: "Pausa (min)", key: "break_minutes", width: 12 },
+      { header: "Trasferimento", key: "transfer_minutes", width: 14 },
+      { header: "Ore", key: "ore", width: 10 },
+      { header: "Data", key: "data", width: 14 },
+      { header: "Geo inizio", key: "start_location", width: 26 },
+      { header: "Geo fine", key: "end_location", width: 26 },
+      { header: "Descrizione", key: "descrizione", width: 40 },
+      { header: "Ore effettive", key: "ore_effettive", width: 14 },
+      { header: "ID", key: "id", width: 10 },
+    ];
+
+    const geocodeCache = new Map();
+    for (const e of rows) {
+      const resolvedStartLocation = await humanizeLocation(
+        e.start_location ?? e.location,
+        geocodeCache,
       );
+      const resolvedEndLocation = await humanizeLocation(
+        e.end_location,
+        geocodeCache,
+      );
+      ws.addRow({
+        operator: coalesce(e.operator, ""),
+        cantiere: coalesce(e.cantiere, ""),
+        macchina: coalesce(e.macchina, ""),
+        linea: coalesce(e.linea, ""),
+        start_time: coalesce(coalesce(e.start_time, e.startTime), ""),
+        end_time: coalesce(coalesce(e.end_time, e.endTime), ""),
+        break_minutes: coalesce(coalesce(e.break_minutes, e.breakMinutes), ""),
+        transfer_minutes: coalesce(
+          coalesce(e.transfer_minutes, e.transferMinutes),
+          "",
+        ),
+        ore: normalizeOreValue(e.ore),
+        data: coalesce(e.data, ""),
+        start_location: resolvedStartLocation,
+        end_location: resolvedEndLocation,
+        descrizione: coalesce(e.descrizione, ""),
+        ore_effettive: formatOreEffettive(e.ore),
+        id: coalesce(e.id, ""),
+      });
+    }
+    ws.getRow(1).font = { bold: true };
+    ws.getColumn("ore").numFmt = "0.00";
 
-  const normalizeOreValue = (oreValue) => {
-    if (coalesce(oreValue, "") === "") return "";
-    const oreNumber = Number(oreValue);
-    if (!Number.isFinite(oreNumber)) return "";
-    return Number(oreNumber.toFixed(2));
-  };
-
-  const formatOreEffettive = (oreValue) => {
-    if (coalesce(oreValue, "") === "") return "";
-    const oreNumber = Number(oreValue);
-    if (!Number.isFinite(oreNumber)) return "";
-    const totalMinutes = Math.round(oreNumber * 60);
-    const hh = Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, "0");
-    const mm = Math.max(totalMinutes % 60, 0)
-      .toString()
-      .padStart(2, "0");
-    return `${hh}:${mm}`;
-  };
-
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Report");
-
-  ws.columns = [
-    { header: "Operatore", key: "operator", width: 24 },
-    { header: "Cantiere", key: "cantiere", width: 24 },
-    { header: "Macchina", key: "macchina", width: 18 },
-    { header: "Linea", key: "linea", width: 14 },
-    { header: "Ora inizio", key: "start_time", width: 12 },
-    { header: "Ora fine", key: "end_time", width: 12 },
-    { header: "Pausa (min)", key: "break_minutes", width: 12 },
-    { header: "Trasferimento", key: "transfer_minutes", width: 14 },
-    { header: "Ore", key: "ore", width: 10 },
-    { header: "Data", key: "data", width: 14 },
-    { header: "Geo inizio", key: "start_location", width: 26 },
-    { header: "Geo fine", key: "end_location", width: 26 },
-    { header: "Descrizione", key: "descrizione", width: 40 },
-    { header: "Ore effettive", key: "ore_effettive", width: 14 },
-    { header: "ID", key: "id", width: 10 },
-  ];
-
-  const geocodeCache = new Map();
-  for (const e of rows) {
-    const resolvedStartLocation = await humanizeLocation(
-      e.start_location ?? e.location,
-      geocodeCache,
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    const resolvedEndLocation = await humanizeLocation(
-      e.end_location,
-      geocodeCache,
-    );
-    ws.addRow({
-      operator: coalesce(e.operator, ""),
-      cantiere: coalesce(e.cantiere, ""),
-      macchina: coalesce(e.macchina, ""),
-      linea: coalesce(e.linea, ""),
-      start_time: coalesce(coalesce(e.start_time, e.startTime), ""),
-      end_time: coalesce(coalesce(e.end_time, e.endTime), ""),
-      break_minutes: coalesce(coalesce(e.break_minutes, e.breakMinutes), ""),
-      transfer_minutes: coalesce(
-        coalesce(e.transfer_minutes, e.transferMinutes),
-        "",
-      ),
-      ore: normalizeOreValue(e.ore),
-      data: coalesce(e.data, ""),
-      start_location: resolvedStartLocation,
-      end_location: resolvedEndLocation,
-      descrizione: coalesce(e.descrizione, ""),
-      ore_effettive: formatOreEffettive(e.ore),
-      id: coalesce(e.id, ""),
-    });
+    return res.send(Buffer.from(buf));
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("Errore export XLSX", errorMessage);
+    return res.status(500).json({ error: "Errore export Excel" });
   }
-  ws.getRow(1).font = { bold: true };
-  ws.getColumn("ore").numFmt = "0.00";
-
-  const buf = await wb.xlsx.writeBuffer();
-  res.setHeader("Content-Disposition", 'attachment; filename="report.xlsx"');
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  );
-  res.send(Buffer.from(buf));
 });
 
 // --- Avvio ---
