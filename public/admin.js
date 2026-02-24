@@ -63,6 +63,26 @@ function debounce(fn, delay = 300) {
   };
 }
 
+function getActiveFilters() {
+  const macchina = $("f-macchina")?.value || "";
+  const linea = $("f-linea")?.value || "";
+  const operator = $("f-operator")?.value || "";
+  const cantiere = $("f-cantiere")?.value || "";
+  const descrContains = $("f-descr")?.value || "";
+  const dataFrom = $("f-from")?.value ? ymdToDmy($("f-from").value) : "";
+  const dataTo = $("f-to")?.value ? ymdToDmy($("f-to").value) : "";
+
+  return {
+    cantiere: cantiere || null,
+    macchina: macchina || null,
+    linea: linea || null,
+    operator: operator || null,
+    descrContains: descrContains || null,
+    dataFrom: dataFrom || null,
+    dataTo: dataTo || null,
+  };
+}
+
 // Pulisce i filtri ai valori vuoti
 function clearFilters() {
   const ids = [
@@ -115,24 +135,7 @@ function renderTable(entries) {
 async function search(ev) {
   if (ev) ev.preventDefault();
   if (!TOKEN) return;
-
-  const macchina = $("f-macchina")?.value || "";
-  const linea = $("f-linea")?.value || "";
-  const operator = $("f-operator")?.value || "";
-  const cantiere = $("f-cantiere")?.value || "";
-  const descrContains = $("f-descr")?.value || "";
-  const dataFrom = $("f-from")?.value ? ymdToDmy($("f-from").value) : "";
-  const dataTo = $("f-to")?.value ? ymdToDmy($("f-to").value) : "";
-
-  const body = {
-    cantiere: cantiere || null,
-    macchina: macchina || null,
-    linea: linea || null,
-    operator: operator || null,
-    descrContains: descrContains || null,
-    dataFrom: dataFrom || null,
-    dataTo: dataTo || null,
-  };
+  const body = getActiveFilters();
 
   const res = await fetch("/api/entries/search", {
     method: "POST",
@@ -179,7 +182,7 @@ async function deleteFiltered() {
   }
   if (
     !window.confirm(
-      `Confermi la cancellazione di ${entries.length} righe filtrate?`
+      `Confermi la cancellazione di ${entries.length} righe filtrate?`,
     )
   )
     return;
@@ -205,7 +208,7 @@ async function deleteFiltered() {
 }
 
 async function exportXlsx() {
-  const entries = window.__lastEntries || [];
+  const filters = getActiveFilters();
   setExportLoading(true);
   try {
     const res = await fetch("/api/export/xlsx", {
@@ -214,7 +217,7 @@ async function exportXlsx() {
         "Content-Type": "application/json",
         Authorization: "Bearer " + TOKEN,
       },
-      body: JSON.stringify({ entries }),
+      body: JSON.stringify({ filters }),
     });
     if (!res.ok) {
       const out = await safeJson(res);

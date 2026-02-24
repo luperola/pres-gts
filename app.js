@@ -1917,7 +1917,15 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 // --- EXPORT XLSX ---
 app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
   const entriesPayload = req.body && req.body.entries;
-  const rows = Array.isArray(entriesPayload) ? entriesPayload : [];
+  const filtersPayload = req.body && req.body.filters;
+  const hasDirectEntries = Array.isArray(entriesPayload);
+  const rows = hasDirectEntries
+    ? entriesPayload
+    : await searchEntriesInDb(
+        filtersPayload && typeof filtersPayload === "object"
+          ? filtersPayload
+          : {},
+      );
 
   const normalizeOreValue = (oreValue) => {
     if (coalesce(oreValue, "") === "") return "";
