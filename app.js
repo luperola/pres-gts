@@ -2062,17 +2062,17 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 
     const formatOreEffettive = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
-      const oreNumber = Number(oreValue);
-      if (!Number.isFinite(oreNumber)) return "";
-      const safeOre = Math.max(oreNumber, 0);
-      const hh = Math.floor(safeOre);
-      let mm = Math.round((safeOre - hh) * 60);
-      let normalizedHh = hh;
-      if (mm === 60) {
-        normalizedHh += 1;
-        mm = 0;
-      }
-      return `${normalizedHh.toString().padStart(2, "0")}:${mm
+      const normalizedValue = String(oreValue).trim().replace(",", ".");
+      const parsedMatch = normalizedValue.match(/^(\d+)(?:\.(\d+))?$/);
+      if (!parsedMatch) return "";
+
+      const hh = Number(parsedMatch[1]);
+      const decimalChunk = (parsedMatch[2] || "0").padEnd(2, "0").slice(0, 2);
+      const decimalMinutes = Number(decimalChunk);
+      if (!Number.isFinite(hh) || !Number.isFinite(decimalMinutes)) return "";
+
+      const mm = Math.floor(decimalMinutes * 0.6);
+      return `${hh.toString().padStart(2, "0")}:${mm
         .toString()
         .padStart(2, "0")}`;
     };
@@ -2158,17 +2158,17 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 
     const formatOreEffettive = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
-      const oreNumber = Number(oreValue);
-      if (!Number.isFinite(oreNumber)) return "";
-      const safeOre = Math.max(oreNumber, 0);
-      const hh = Math.floor(safeOre);
-      let mm = Math.round((safeOre - hh) * 60);
-      let normalizedHh = hh;
-      if (mm === 60) {
-        normalizedHh += 1;
-        mm = 0;
-      }
-      return `${normalizedHh.toString().padStart(2, "0")}:${mm
+      const normalizedValue = String(oreValue).trim().replace(",", ".");
+      const parsedMatch = normalizedValue.match(/^(\d+)(?:\.(\d+))?$/);
+      if (!parsedMatch) return "";
+
+      const hh = Number(parsedMatch[1]);
+      const decimalChunk = (parsedMatch[2] || "0").padEnd(2, "0").slice(0, 2);
+      const decimalMinutes = Number(decimalChunk);
+      if (!Number.isFinite(hh) || !Number.isFinite(decimalMinutes)) return "";
+
+      const mm = Math.floor(decimalMinutes * 0.6);
+      return `${hh.toString().padStart(2, "0")}:${mm
         .toString()
         .padStart(2, "0")}`;
     };
