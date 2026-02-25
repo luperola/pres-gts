@@ -2013,7 +2013,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       start_location: 60,
       end_location: 60,
       descrizione: 604,
-      ore_effettive: 16,
+      //ore_effettive: 16,
       id: 10,
     };
     const csvColumns = [
@@ -2066,9 +2066,9 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       const oreNumber = Number(normalizedValue);
       if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      const hh = Math.trunc(oreNumber);
-      const decimalPart = oreNumber - hh;
-      const mm = Math.trunc(decimalPart * 60);
+      const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
+      const hh = Math.floor(totalMinutes / 60);
+      const mm = totalMinutes % 60;
       return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
@@ -2095,7 +2095,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
         start_location: startLocation,
         end_location: endLocation,
         descrizione: coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
-        ore_effettive: formatOreEffettive(e.ore),
+        //ore_effettive: formatOreEffettive(coalesce(e.ore_effettive, e.ore)),
         id: coalesce(e.id, ""),
       };
       const line = csvColumns
@@ -2157,9 +2157,9 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       const oreNumber = Number(normalizedValue);
       if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      const hh = Math.trunc(oreNumber);
-      const decimalPart = oreNumber - hh;
-      const mm = Math.trunc(decimalPart * 60);
+      const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
+      const hh = Math.floor(totalMinutes / 60);
+      const mm = totalMinutes % 60;
       return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
@@ -2177,7 +2177,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       start_location: 60,
       end_location: 60,
       descrizione: 604,
-      ore_effettive: 16,
+      //ore_effettive: 16,
       id: 10,
     };
 
@@ -2261,7 +2261,7 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
         start_location: startLocation,
         end_location: endLocation,
         descrizione: coalesce(e.descrizione, ""),
-        ore_effettive: formatOreEffettive(e.ore),
+        //ore_effettive: formatOreEffettive(coalesce(e.ore_effettive, e.ore)),
         id: coalesce(e.id, ""),
       });
     }
