@@ -2060,6 +2060,23 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       return `${hh},${mm}`;
     };
 
+    const formatOreEffettive = (oreValue) => {
+      if (coalesce(oreValue, "") === "") return "";
+      const oreNumber = Number(oreValue);
+      if (!Number.isFinite(oreNumber)) return "";
+      const safeOre = Math.max(oreNumber, 0);
+      const hh = Math.floor(safeOre);
+      let mm = Math.round((safeOre - hh) * 60);
+      let normalizedHh = hh;
+      if (mm === 60) {
+        normalizedHh += 1;
+        mm = 0;
+      }
+      return `${normalizedHh.toString().padStart(2, "0")}:${mm
+        .toString()
+        .padStart(2, "0")}`;
+    };
+
     for (const e of rows) {
       const startLocation = await humanizeLocation(
         coalesce(e.start_location, e.location),
@@ -2083,7 +2100,7 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
         start_location: startLocation,
         end_location: endLocation,
         descrizione: coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
-        ore_effettive: formatOreHhCommaMm(e.ore),
+        ore_effettive: formatOreEffettive(e.ore),
         id: coalesce(e.id, ""),
       };
       const line = csvColumns
@@ -2140,7 +2157,20 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     };
 
     const formatOreEffettive = (oreValue) => {
-      return formatOreHhCommaMm(oreValue);
+      if (coalesce(oreValue, "") === "") return "";
+      const oreNumber = Number(oreValue);
+      if (!Number.isFinite(oreNumber)) return "";
+      const safeOre = Math.max(oreNumber, 0);
+      const hh = Math.floor(safeOre);
+      let mm = Math.round((safeOre - hh) * 60);
+      let normalizedHh = hh;
+      if (mm === 60) {
+        normalizedHh += 1;
+        mm = 0;
+      }
+      return `${normalizedHh.toString().padStart(2, "0")}:${mm
+        .toString()
+        .padStart(2, "0")}`;
     };
 
     const xlsxColumnWidths = {
