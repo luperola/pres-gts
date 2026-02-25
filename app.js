@@ -2063,15 +2063,17 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
     const formatOreEffettive = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
       const normalizedValue = String(oreValue).trim().replace(",", ".");
-      const parsedMatch = normalizedValue.match(/^(\d+)(?:\.(\d+))?$/);
-      if (!parsedMatch) return "";
+      const oreNumber = Number(normalizedValue);
+      if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      const hh = Number(parsedMatch[1]);
-      const decimalChunk = (parsedMatch[2] || "0").padEnd(2, "0").slice(0, 2);
-      const decimalMinutes = Number(decimalChunk);
-      if (!Number.isFinite(hh) || !Number.isFinite(decimalMinutes)) return "";
+      let hh = Math.trunc(oreNumber);
+      let hundredths = Math.round((oreNumber - hh) * 100);
+      if (hundredths >= 100) {
+        hh += 1;
+        hundredths = 0;
+      }
 
-      const mm = Math.floor(decimalMinutes * 0.6);
+      const mm = Math.floor(hundredths * 0.6);
       return `${hh.toString().padStart(2, "0")}:${mm
         .toString()
         .padStart(2, "0")}`;
@@ -2159,15 +2161,17 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
     const formatOreEffettive = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
       const normalizedValue = String(oreValue).trim().replace(",", ".");
-      const parsedMatch = normalizedValue.match(/^(\d+)(?:\.(\d+))?$/);
-      if (!parsedMatch) return "";
+      const oreNumber = Number(normalizedValue);
+      if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      const hh = Number(parsedMatch[1]);
-      const decimalChunk = (parsedMatch[2] || "0").padEnd(2, "0").slice(0, 2);
-      const decimalMinutes = Number(decimalChunk);
-      if (!Number.isFinite(hh) || !Number.isFinite(decimalMinutes)) return "";
+      let hh = Math.trunc(oreNumber);
+      let hundredths = Math.round((oreNumber - hh) * 100);
+      if (hundredths >= 100) {
+        hh += 1;
+        hundredths = 0;
+      }
 
-      const mm = Math.floor(decimalMinutes * 0.6);
+      const mm = Math.floor(hundredths * 0.6);
       return `${hh.toString().padStart(2, "0")}:${mm
         .toString()
         .padStart(2, "0")}`;
