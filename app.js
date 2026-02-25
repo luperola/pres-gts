@@ -2068,15 +2068,8 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
 
       let hh = Math.trunc(oreNumber);
       let hundredths = Math.round((oreNumber - hh) * 100);
-      if (hundredths >= 100) {
-        hh += 1;
-        hundredths = 0;
-      }
-
       const mm = Math.floor(hundredths * 0.6);
-      return `${hh.toString().padStart(2, "0")}:${mm
-        .toString()
-        .padStart(2, "0")}`;
+      return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
     for (const e of rows) {
@@ -2166,15 +2159,8 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
 
       let hh = Math.trunc(oreNumber);
       let hundredths = Math.round((oreNumber - hh) * 100);
-      if (hundredths >= 100) {
-        hh += 1;
-        hundredths = 0;
-      }
-
       const mm = Math.floor(hundredths * 0.6);
-      return `${hh.toString().padStart(2, "0")}:${mm
-        .toString()
-        .padStart(2, "0")}`;
+      return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
     const xlsxColumnWidths = {
