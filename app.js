@@ -2066,9 +2066,9 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       const oreNumber = Number(normalizedValue);
       if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      let hh = Math.trunc(oreNumber);
-      let hundredths = Math.round((oreNumber - hh) * 100);
-      const mm = Math.floor(hundredths * 0.6);
+      const hh = Math.trunc(oreNumber);
+      const decimalPart = oreNumber - hh;
+      const mm = Math.trunc(decimalPart * 60);
       return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
@@ -2157,9 +2157,9 @@ app.post("/api/export/xlsx", authMiddleware, async (req, res) => {
       const oreNumber = Number(normalizedValue);
       if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-      let hh = Math.trunc(oreNumber);
-      let hundredths = Math.round((oreNumber - hh) * 100);
-      const mm = Math.floor(hundredths * 0.6);
+      const hh = Math.trunc(oreNumber);
+      const decimalPart = oreNumber - hh;
+      const mm = Math.trunc(decimalPart * 60);
       return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
