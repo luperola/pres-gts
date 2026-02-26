@@ -1988,17 +1988,10 @@ app.post("/api/entries/delete-bulk", authMiddleware, async (req, res) => {
 
 // --- EXPORT CSV ---
 app.post("/api/export/csv", authMiddleware, async (req, res) => {
-  // Heroku router timeout (H12) è 30s: l'export non deve fare reverse-geocode "uno per riga" in serie.
-  // Strategia:
-  // 1) Rispondiamo in streaming (header subito).
-  // 2) Reverse-geocode SOLO per un numero limitato di coordinate UNICHE, con timeout corto e concorrenza limitata.
-  // 3) Se non risolviamo in tempo, esportiamo comunque almeno le coordinate (lat,lon) o la stringa originale.
-
   try {
     const entriesPayload = req.body && req.body.entries;
     const filtersPayload = req.body && req.body.filters;
     const hasDirectEntries = Array.isArray(entriesPayload);
-
     const rows = hasDirectEntries
       ? entriesPayload
       : await searchEntriesInDb(
@@ -2006,11 +1999,23 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
             ? filtersPayload
             : {},
         );
-
-    // --- CSV setup (streaming) ---
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
-
+    const csvColumnWidths = {
+      operator: 70,
+      cantiere: 50,
+      macchina: 50,
+      linea: 50,
+      start_time: 14,
+      end_time: 14,
+      break_minutes: 14,
+      transfer_minutes: 16,
+      ore: 14,
+      data: 14,
+      start_location: 60,
+      end_location: 60,
+      descrizione: 604,
+      //ore_effettive: 16,
+      id: 10,
+    };
     const csvColumns = [
       { header: "Operatore", key: "operator" },
       { header: "Cantiere", key: "cantiere" },
@@ -2025,20 +2030,27 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       { header: "Geo inizio", key: "start_location" },
       { header: "Geo fine", key: "end_location" },
       { header: "Descrizione", key: "descrizione" },
+      { header: "Ore effettive", key: "ore_effettive" },
       { header: "ID", key: "id" },
     ];
+    const headers = csvColumns.map((column) => column.header);
+    const lines = [];
+    lines.push(headers.join(";"));
+    const locationCache = new Map();
+
+    const padCsvValue = (value, width) => {
+      if (!Number.isFinite(width) || width <= 0) return value;
+      return value.padEnd(width, " ");
+    };
 
     const toCsvCell = (value) => {
-      const s = String(value ?? "")
-        .replace(/\r?\n/g, " ")
-        .replace(/;/g, ",");
-      const escaped = s.replace(/"/g, '""');
-      return `"${escaped}"`;
+      const escapedValue = value.replace(/"/g, '""');
+      return `"${escapedValue}"`;
     };
 
     const formatOreHhCommaMm = (oreValue) => {
       if (coalesce(oreValue, "") === "") return "";
-      const oreNumber = Number(String(oreValue).replace(",", "."));
+      const oreNumber = Number(oreValue);
       if (!Number.isFinite(oreNumber)) return "";
       const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
       const hh = Math.floor(totalMinutes / 60)
@@ -2048,120 +2060,27 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
       return `${hh},${mm}`;
     };
 
-    // Header + BOM subito (importante per evitare H12 e per Excel)
-    res.write(
-      `\uFEFF${csvColumns.map((c) => toCsvCell(c.header)).join(";")}\r\n`,
-    );
+    const formatOreEffettive = (oreValue) => {
+      if (coalesce(oreValue, "") === "") return "";
+      const normalizedValue = String(oreValue).trim().replace(",", ".");
+      const oreNumber = Number(normalizedValue);
+      if (!Number.isFinite(oreNumber) || oreNumber < 0) return "";
 
-    // --- Reverse geocode "fast & bounded" ---
-    const MAX_LOOKUPS = 40; // massimo coordinate uniche da risolvere per export
-    const BUDGET_MS = 20000; // budget totale per reverse-geocode
-    const PER_LOOKUP_TIMEOUT_MS = 1200;
-    const CONCURRENCY = 6;
-
-    const startAt = Date.now();
-
-    // key -> {lat, lon}
-    const coordsMap = new Map();
-
-    const addCoordsFromRaw = (raw) => {
-      const trimmed = typeof raw === "string" ? raw.trim() : "";
-      if (!trimmed) return;
-      const coords = extractCoordsFromLocationString(trimmed);
-      if (!coords) return;
-      const key = `${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`;
-      if (!coordsMap.has(key)) coordsMap.set(key, coords);
+      const totalMinutes = Math.max(Math.round(oreNumber * 60), 0);
+      const hh = Math.floor(totalMinutes / 60);
+      const mm = totalMinutes % 60;
+      return `${hh.toString()}:${mm.toString().padStart(2, "0")}`;
     };
 
     for (const e of rows) {
-      addCoordsFromRaw(coalesce(e.start_location, e.location));
-      addCoordsFromRaw(coalesce(e.end_location, ""));
-      if (coordsMap.size >= MAX_LOOKUPS) break; // basta così
-    }
-
-    // reverse-geocode veloce (Photon) con timeout corto + cache già esistente
-    async function reverseGeocodeFast(lat, lon) {
-      const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-      const cachedLabel = getCachedReverseGeocodeLabel(cacheKey);
-      if (cachedLabel) return cachedLabel;
-
-      const url = new URL("https://photon.komoot.io/reverse");
-      url.searchParams.set("lat", String(lat));
-      url.searchParams.set("lon", String(lon));
-
-      const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        PER_LOOKUP_TIMEOUT_MS,
+      const startLocation = await humanizeLocation(
+        coalesce(e.start_location, e.location),
+        locationCache,
       );
-
-      try {
-        const r = await fetch(url, {
-          signal: controller.signal,
-          headers: { "User-Agent": NOMINATIM_USER_AGENT },
-        });
-        if (!r.ok) return null;
-        const data = await r.json();
-        const label = formatPhotonResult(data);
-        if (label) saveCachedReverseGeocodeLabel(cacheKey, label);
-        return label || null;
-      } catch {
-        return null;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-
-    async function runPool(items, worker, concurrency) {
-      const results = new Array(items.length);
-      let index = 0;
-      const runners = Array.from(
-        { length: Math.max(1, concurrency) },
-        async () => {
-          while (index < items.length) {
-            const i = index++;
-            results[i] = await worker(items[i], i);
-          }
-        },
+      const endLocation = await humanizeLocation(
+        coalesce(e.end_location, ""),
+        locationCache,
       );
-      await Promise.all(runners);
-      return results;
-    }
-
-    const keysToResolve = Array.from(coordsMap.keys());
-    const labelMap = new Map();
-
-    if (keysToResolve.length) {
-      await runPool(
-        keysToResolve,
-        async (key) => {
-          if (Date.now() - startAt > BUDGET_MS) return null;
-          const coords = coordsMap.get(key);
-          if (!coords) return null;
-          const label = await reverseGeocodeFast(coords.lat, coords.lon);
-          if (label) labelMap.set(key, label);
-          return null;
-        },
-        CONCURRENCY,
-      );
-    }
-
-    const humanizeForExport = (rawLocation) => {
-      const trimmed = typeof rawLocation === "string" ? rawLocation.trim() : "";
-      if (!trimmed) return "";
-      const coords = extractCoordsFromLocationString(trimmed);
-      if (coords) {
-        const key = `${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`;
-        const label = labelMap.get(key) || getCachedReverseGeocodeLabel(key);
-        // se non risolto, almeno esportiamo lat,lon
-        return label || `${coords.lat.toFixed(5)},${coords.lon.toFixed(5)}`;
-      }
-      // Se è già indirizzo testuale, prova a ridurlo a località
-      return extractLocalityFromAddressString(trimmed) || trimmed;
-    };
-
-    // --- Write rows streaming ---
-    for (const e of rows) {
       const lineData = {
         operator: coalesce(e.operator, ""),
         cantiere: coalesce(e.cantiere, ""),
@@ -2173,22 +2092,32 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
         transfer_minutes: coalesce(e.transfer_minutes, ""),
         ore: formatOreHhCommaMm(e.ore),
         data: coalesce(e.data, ""),
-        start_location: humanizeForExport(
-          coalesce(e.start_location, e.location),
-        ),
-        end_location: humanizeForExport(coalesce(e.end_location, "")),
-        descrizione: coalesce(e.descrizione, ""),
+        start_location: startLocation,
+        end_location: endLocation,
+        descrizione: coalesce(e.descrizione, "").replace(/\r?\n/g, " "),
+        //ore_effettive: formatOreEffettive(coalesce(e.ore_effettive, e.ore)),
         id: coalesce(e.id, ""),
       };
-
-      const line = csvColumns.map((c) => toCsvCell(lineData[c.key])).join(";");
-      res.write(line + "\r\n");
-
-      // Safety: se per qualsiasi motivo stiamo sforando il budget, continuiamo senza reverse-geocode
-      // (qui ormai il reverse-geocode è già "bounded", quindi è solo una rete di sicurezza)
+      const line = csvColumns
+        .map((column) => {
+          const cleanValue = String(coalesce(lineData[column.key], "")).replace(
+            /;/g,
+            ",",
+          );
+          const paddedValue = padCsvValue(
+            cleanValue,
+            csvColumnWidths[column.key],
+          );
+          return toCsvCell(paddedValue);
+        })
+        .join(";");
+      lines.push(line);
     }
 
-    return res.end();
+    const csv = `\uFEFF${lines.join("\r\n")}`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
+    return res.send(csv);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error("Errore export CSV", errorMessage);
