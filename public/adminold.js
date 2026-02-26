@@ -1,9 +1,6 @@
-// === admin.js (versione completa - FIX invalid JSON + abort ricerche concorrenti) ===
+// === admin.js (versione completa) ===
 let TOKEN = null;
 const $ = (id) => document.getElementById(id);
-
-// Controller per abortire la ricerca precedente quando cambio filtri rapidamente
-let currentSearchController = null;
 
 // YYYY-MM-DD -> DD/MM/YYYY (per i campi <input type="date">)
 function ymdToDmy(ymd) {
@@ -40,10 +37,13 @@ function setCsvLoading(isLoading) {
   const spinner = $("spinnerCsv");
   const label = $("btnCsvLabel");
 
-  if (btn) btn.disabled = isLoading;
+  if (btn) {
+    btn.disabled = isLoading;
+  }
 
-  if (spinner) spinner.classList.toggle("d-none", !isLoading);
-
+  if (spinner) {
+    spinner.classList.toggle("d-none", !isLoading);
+  }
   if (label) {
     if (!label.dataset.defaultText) {
       label.dataset.defaultText = label.textContent || "Export CSV";
@@ -53,7 +53,6 @@ function setCsvLoading(isLoading) {
       : label.dataset.defaultText;
   }
 }
-
 function debounce(fn, delay = 300) {
   let timeoutId;
   return function (...args) {
@@ -110,111 +109,49 @@ function renderTable(entries) {
   for (const e of entries) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="text-nowrap">${e.operator ?? ""}</td>
+     <td class="text-nowrap">${e.operator ?? ""}</td>
       <td class="text-nowrap">${e.cantiere ?? ""}</td>
       <td class="text-nowrap">${e.macchina ?? ""}</td>
       <td class="text-nowrap">${e.linea ?? ""}</td>
       <td class="text-nowrap">${e.start_time ?? ""}</td>
       <td class="text-nowrap">${e.end_time ?? ""}</td>     
-      <td class="text-nowrap">${e.data ?? ""}</td>
+           <td class="text-nowrap">${e.data ?? ""}</td>
       <td class="text-break">${e.descrizione ?? ""}</td>
       <td>
-        <button class="btn btn-sm btn-outline-danger btn-del" data-id="${e.id}">Elimina</button>
+        <button class="btn btn-sm btn-outline-danger btn-del" data-id="${
+          e.id
+        }">Elimina</button>
       </td>
     `;
     tbody.appendChild(tr);
   }
-
   // salva ultimo set per export/cancellazione massiva
   window.__lastEntries = entries;
 }
 
-/**
- * Lettura robusta della risposta:
- * - prova a parsare JSON quando è JSON
- * - se arriva HTML o altro (tipico Heroku timeout/502/503), ritorna oggetto con rawText
- */
-async function safeReadResponse(res) {
-  const contentType = (res.headers.get("content-type") || "").toLowerCase();
-
-  // il body si può leggere una sola volta => leggiamo testo e poi tentiamo parse
-  const rawText = await res.text();
-  const trimmed = rawText.trim();
-
-  const looksJson =
-    contentType.includes("application/json") ||
-    trimmed.startsWith("{") ||
-    trimmed.startsWith("[");
-
-  if (looksJson) {
-    try {
-      return JSON.parse(rawText);
-    } catch {
-      // continua sotto
-    }
-  }
-
-  // non è JSON valido: spesso pagina HTML di errore (Heroku/router)
-  return {
-    error: "Risposta non-JSON dal server (probabile timeout/502/503/HTML).",
-    status: res.status,
-    rawText: trimmed.slice(0, 800),
-  };
-}
-
-// Mantengo una funzione compatibile con il tuo codice precedente
-async function safeJson(res) {
-  const out = await safeReadResponse(res);
-  // se non è JSON, safeReadResponse ritorna già {error,...}
-  return out;
-}
-
-// Esegue la ricerca con i filtri correnti (con abort richiesta precedente)
+// Esegue la ricerca con i filtri correnti
 async function search(ev) {
   if (ev) ev.preventDefault();
   if (!TOKEN) return;
-
-  // abort ricerca precedente se ancora in corso (evita accavallamenti)
-  if (currentSearchController) {
-    try {
-      currentSearchController.abort();
-    } catch {}
-  }
-  currentSearchController = new AbortController();
-
   const body = getActiveFilters();
 
-  let res;
-  try {
-    res = await fetch("/api/entries/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + TOKEN,
-      },
-      body: JSON.stringify(body),
-      signal: currentSearchController.signal,
-    });
-  } catch (err) {
-    // se è abort, non è un errore reale
-    if (err?.name === "AbortError") return;
-    console.error("Errore fetch search:", err);
-    $("loginMsg").textContent = "Errore di rete durante la ricerca";
-    return;
-  }
-
-  // Leggi SEMPRE in modo robusto (anche su res.ok)
-  const out = await safeReadResponse(res);
+  const res = await fetch("/api/entries/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + TOKEN,
+    },
+    body: JSON.stringify(body),
+  });
 
   if (!res.ok) {
-    console.warn("SEARCH non-ok:", res.status, out);
+    const out = await safeJson(res);
     $("loginMsg").textContent = out?.error || "Errore ricerca";
     return;
   }
 
-  // out deve essere JSON con {entries:[...]} ma gestiamo anche fallback
-  const entries = Array.isArray(out?.entries) ? out.entries : [];
-  renderTable(entries);
+  const out = await res.json();
+  renderTable(Array.isArray(out.entries) ? out.entries : []);
 }
 
 // Cancella una singola riga (conferma)
@@ -228,7 +165,6 @@ async function deleteById(id) {
 
   const out = await safeJson(res);
   if (!res.ok) {
-    console.warn("DELETE non-ok:", res.status, out);
     $("loginMsg").textContent = out?.error || "Errore cancellazione riga";
     return;
   }
@@ -252,7 +188,6 @@ async function deleteFiltered() {
   const ids = entries
     .map((e) => e.id)
     .filter((v) => v !== undefined && v !== null);
-
   const res = await fetch("/api/entries/delete-bulk", {
     method: "POST",
     headers: {
@@ -264,7 +199,6 @@ async function deleteFiltered() {
 
   const out = await safeJson(res);
   if (!res.ok) {
-    console.warn("DELETE BULK non-ok:", res.status, out);
     $("loginMsg").textContent = out?.error || "Errore cancellazione massiva";
     return;
   }
@@ -274,7 +208,6 @@ async function deleteFiltered() {
 async function exportCsv() {
   const filters = getActiveFilters();
   setCsvLoading(true);
-
   try {
     const res = await fetch("/api/export/csv", {
       method: "POST",
@@ -284,15 +217,11 @@ async function exportCsv() {
       },
       body: JSON.stringify({ filters }),
     });
-
     if (!res.ok) {
-      const out = await safeReadResponse(res);
-      console.warn("EXPORT CSV non-ok:", res.status, out);
+      const out = await safeJson(res);
       $("loginMsg").textContent = out?.error || "Errore export CSV";
       return;
     }
-
-    // se ok, deve essere un CSV (blob)
     const blob = await res.blob();
     downloadBlob(blob, "report.csv");
   } catch (error) {
@@ -300,6 +229,15 @@ async function exportCsv() {
     $("loginMsg").textContent = "Errore export CSV";
   } finally {
     setCsvLoading(false);
+  }
+}
+
+// JSON safe
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return { error: "Invalid JSON" };
   }
 }
 
@@ -325,7 +263,6 @@ async function doLogin(ev) {
 
   const out = await safeJson(res);
   if (!res.ok || !out?.token) {
-    console.warn("LOGIN non-ok:", res.status, out);
     $("loginMsg").textContent = out?.error || "Credenziali non valide";
     return;
   }
@@ -364,7 +301,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const debouncedSearch = debounce(() => {
     search().catch(console.error);
   }, 300);
-
   autoFilterIds.forEach((id) => {
     const input = $(id);
     if (input) input.addEventListener("input", debouncedSearch);
@@ -378,6 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
   // Export
+
   const btnCsv = $("btnCsv");
   if (btnCsv) btnCsv.addEventListener("click", exportCsv);
 
