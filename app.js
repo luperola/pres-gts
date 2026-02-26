@@ -2290,9 +2290,11 @@ app.post("/api/export/csv", authMiddleware, async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="report.csv"`);
     return res.send(csv);
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error("Errore export CSV", errorMessage);
-    return res.status(500).json({ error: "Errore export CSV" });
+    console.error("Errore export CSV", err);
+    return res.status(500).json({
+      error: "Errore export CSV",
+      details: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
